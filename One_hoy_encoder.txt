@@ -1,0 +1,87 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestRegressor  # example model
+from sklearn.pipeline import Pipeline
+
+# -------------------------------------------------------
+# 1. Synthetic dataset
+# -------------------------------------------------------
+np.random.seed(42)
+df = pd.DataFrame({
+    'numeric_1': np.random.randn(10),
+    'numeric_2': np.random.randn(10),
+    'category_1': np.random.choice(['A', 'B'], size=10),
+    'category_2': np.random.choice(['X', 'Y', 'Z'], size=10),
+})
+
+# Suppose our target is a numeric column we create
+df['target'] = 2*df['numeric_1'] - 0.5*df['numeric_2'] + \
+               (df['category_1'] == 'A').astype(int)*0.3 + \
+               np.random.randn(10)*0.1
+
+# Split into features and target
+X = df.drop(columns='target')
+y = df['target']
+
+# Identify categorical vs numeric columns
+cat_cols = ['category_1', 'category_2']
+num_cols = ['numeric_1', 'numeric_2']
+
+# -------------------------------------------------------
+# 2. Build ColumnTransformer
+# -------------------------------------------------------
+# This will OneHotEncode the categorical columns, and "passthrough" the numeric columns
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), cat_cols),
+        ('num', 'passthrough', num_cols)
+    ]
+)
+
+# -------------------------------------------------------
+# 3. Create a pipeline with your model
+# -------------------------------------------------------
+model_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', RandomForestRegressor(random_state=42))
+])
+
+# -------------------------------------------------------
+# 4. Train-test split and fit
+# -------------------------------------------------------
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+model_pipeline.fit(X_train, y_train)
+
+# -------------------------------------------------------
+# 5. Evaluate (simple example)
+# -------------------------------------------------------
+r2_score = model_pipeline.score(X_test, y_test)
+print(f'R2 on test set: {r2_score:.3f}')
+
+# If you want to see how the transformed feature matrix looks:
+encoded_sample = model_pipeline.named_steps['preprocessor'].transform(X_train)
+print("Shape of the transformed features:", encoded_sample.shape)
+
+
+
+import pandas as pd
+
+# Let's say we have the same df from above
+df_encoded = pd.get_dummies(df, columns=['category_1', 'category_2'],
+                            drop_first=True)
+
+# Now df_encoded is fully numeric, and you can split into X and y:
+X_encoded = df_encoded.drop(columns='target')
+y_encoded = df_encoded['target']
+
+# Fit any regressor, e.g., LightGBM
+import lightgbm as lgb
+X_train, X_test, y_train, y_test = train_test_split(X_encoded, y_encoded, 
+                                                    test_size=0.2, random_state=42)
+lgbm_model = lgb.LGBMRegressor(n_estimators=50, max_depth=2, random_state=42)
+lgbm_model.fit(X_train, y_train)
+
+print("R2 on test set:", lgbm_model.score(X_test, y_test))
