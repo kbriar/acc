@@ -224,3 +224,70 @@ if __name__ == "__main__":
     
     # Create summary
     summary = create_lgbm_summary(model, X_train, y_train, X_test, y_test)
+
+
+
+
+import numpy as np
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+def evaluate_regression_metrics(
+    y_train=None, 
+    y_pred_train=None, 
+    y_val=None, 
+    y_pred_val=None, 
+    y_test=None, 
+    y_pred_test=None
+):
+    """
+    Computes regression metrics (R2, MAE, RMSE) for each data split (train, val, test).
+    If any (y, y_pred) pair is None, metrics are skipped for that split.
+
+    Parameters
+    ----------
+    y_train : array-like, optional
+        Ground truth (correct) labels for training.
+    y_pred_train : array-like, optional
+        Predicted labels for training.
+    y_val : array-like, optional
+        Ground truth (correct) labels for validation.
+    y_pred_val : array-like, optional
+        Predicted labels for validation.
+    y_test : array-like, optional
+        Ground truth (correct) labels for test.
+    y_pred_test : array-like, optional
+        Predicted labels for test.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are 'train', 'val', 'test', 
+        and each value is another dictionary containing 'R2', 'MAE', 'RMSE'.
+    """
+
+    results = {}
+
+    # Helper function to compute metrics
+    def get_metrics(y_true, y_pred):
+        r2 = r2_score(y_true, y_pred)
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = mean_squared_error(y_true, y_pred, squared=False)
+        return {
+            'R2': r2,
+            'MAE': mae,
+            'RMSE': rmse
+        }
+
+    # Compute metrics for TRAIN if both y_train and y_pred_train are provided
+    if y_train is not None and y_pred_train is not None:
+        results['train'] = get_metrics(y_train, y_pred_train)
+
+    # Compute metrics for VALIDATION if both y_val and y_pred_val are provided
+    if y_val is not None and y_pred_val is not None:
+        results['val'] = get_metrics(y_val, y_pred_val)
+
+    # Compute metrics for TEST if both y_test and y_pred_test are provided
+    if y_test is not None and y_pred_test is not None:
+        results['test'] = get_metrics(y_test, y_pred_test)
+
+    return results
