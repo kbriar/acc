@@ -1,0 +1,43 @@
+columns_to_transform = ["total_active_cars", "total_active_cars_hours", "total_km_driven"]
+
+# Apply transformations to each column
+for column in columns_to_transform:
+    # Square Root
+    data[f"{column}_sqrt"] = np.sqrt(data[column])
+    
+    # Reciprocal
+    data[f"{column}_reciprocal"] = 1 / (data[column] + 1e-10)
+    
+    # Exponential
+    data[f"{column}_exp"] = np.exp(data[column])
+    
+    # Box-Cox
+    data[f"{column}_boxcox"], _ = boxcox(data[column] + 1)
+    
+    # Yeo-Johnson
+    data[f"{column}_yeojohnson"], _ = yeojohnson(data[column])
+    
+    # Binning
+    data[f"{column}_binned"] = pd.cut(data[column], bins=5, labels=False)
+    
+    # Standardization
+    scaler = StandardScaler()
+    data[f"{column}_standardized"] = scaler.fit_transform(data[[column]])
+    
+    # Min-Max Scaling
+    scaler = MinMaxScaler()
+    data[f"{column}_minmax"] = scaler.fit_transform(data[[column]])
+    
+    # Logit (if column represents probabilities)
+    # data[f"{column}_logit"] = np.log(data[column] / (1 - data[column] + 1e-10))
+    
+    # Power Transformation
+    lambda_value = 0.5
+    data[f"{column}_power_{lambda_value}"] = np.power(data[column], lambda_value)
+
+# Interaction Terms
+data["interaction_term"] = data["total_active_cars"] * data["total_km_driven"]
+data["poly_interaction_term"] = data["total_active_cars"] ** 2 * data["total_km_driven"]
+
+# Display the transformed data
+print(data.head())
