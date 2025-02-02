@@ -1,0 +1,64 @@
+def check_infinite_na_values(df):
+    """
+    Check for infinite and NA values in DataFrame columns.
+    
+    Parameters:
+    df (pandas.DataFrame): Input DataFrame to check
+    
+    Returns:
+    dict: Dictionary containing information about infinite and NA values
+    """
+    # Initialize results dictionary
+    results = {
+        'infinite_counts': {},
+        'na_counts': {},
+        'total_issues': {}
+    }
+    
+    # Check each column
+    for column in df.columns:
+        # Count infinite values
+        infinite_mask = np.isinf(df[column])
+        infinite_count = infinite_mask.sum()
+        
+        # Count NA values (including None, NaN, etc.)
+        na_count = df[column].isna().sum()
+        
+        # Store results if there are any issues
+        if infinite_count > 0:
+            results['infinite_counts'][column] = infinite_count
+            
+        if na_count > 0:
+            results['na_counts'][column] = na_count
+            
+        # Store total issues
+        total_issues = infinite_count + na_count
+        if total_issues > 0:
+            results['total_issues'][column] = total_issues
+    
+    # Print detailed report
+    print("=== Data Quality Report ===\n")
+    
+    if not results['infinite_counts'] and not results['na_counts']:
+        print("✓ No infinite or NA values found in any column!")
+        return results
+    
+    print("Columns with infinite values:")
+    if results['infinite_counts']:
+        for col, count in results['infinite_counts'].items():
+            print(f"  - {col}: {count} infinite values")
+    else:
+        print("  ✓ No infinite values found")
+    
+    print("\nColumns with NA values:")
+    if results['na_counts']:
+        for col, count in results['na_counts'].items():
+            print(f"  - {col}: {count} NA values")
+    else:
+        print("  ✓ No NA values found")
+    
+    print("\nTotal issues by column:")
+    for col, count in results['total_issues'].items():
+        print(f"  - {col}: {count} total issues")
+    
+    return results
