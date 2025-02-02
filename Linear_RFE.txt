@@ -1,0 +1,56 @@
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import train_test_split
+
+# -------------------------------------------------------
+# Example dataset setup
+# -------------------------------------------------------
+# Suppose X is a DataFrame of numeric predictors and y is the numeric response
+# For demonstration, we'll generate a synthetic dataset
+
+np.random.seed(42)
+X = pd.DataFrame({
+    'feature_1': np.random.randn(100),
+    'feature_2': np.random.randn(100),
+    'feature_3': np.random.randn(100),
+    'feature_4': np.random.randn(100),
+    'feature_5': np.random.randn(100),
+    'feature_6': np.random.randn(100),
+})
+
+y = 3*X['feature_1'] - 2*X['feature_3'] + 5*X['feature_5'] + np.random.randn(100)  # some relationship
+
+# -------------------------------------------------------
+# Train-test split (optional but often recommended)
+# -------------------------------------------------------
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# -------------------------------------------------------
+# Step 1: Create a base model
+# -------------------------------------------------------
+lm = LinearRegression()
+
+# -------------------------------------------------------
+# Step 2: Create the RFE model
+# -------------------------------------------------------
+# We will select the top 3 features (just as an example)
+selector = RFE(estimator=lm, n_features_to_select=3)
+selector = selector.fit(X_train, y_train)
+
+# -------------------------------------------------------
+# Step 3: Examine which features were selected
+# -------------------------------------------------------
+selected_features = X_train.columns[selector.support_]
+print("Selected Features:")
+print(selected_features)
+
+# -------------------------------------------------------
+# (Optional) Step 4: Fit a final model using only the selected features
+# -------------------------------------------------------
+lm_final = LinearRegression()
+lm_final.fit(X_train[selected_features], y_train)
+r2_score = lm_final.score(X_test[selected_features], y_test)
+
+print("\nR-squared with selected features on test set:", r2_score)

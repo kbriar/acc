@@ -1,0 +1,79 @@
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+import shap
+
+# -------------------------------------------------------
+# 1. Example dataset
+# -------------------------------------------------------
+np.random.seed(42)
+X = pd.DataFrame({
+    'feature_1': np.random.randn(573),
+    'feature_2': np.random.randn(573),
+    'feature_3': np.random.randn(573),
+    'feature_4': np.random.randn(573),
+    'feature_5': np.random.randn(573),
+    'feature_6': np.random.randn(573),
+    # ... up to however many features you have (30 in your case)
+})
+
+# Let's create a synthetic target where feature_1 and feature_3
+# have a positive effect, feature_2 has negative effect, etc.
+y = 2 * X['feature_1'] - 3 * X['feature_2'] + 0.5 * X['feature_3'] + np.random.randn(573)
+
+# -------------------------------------------------------
+# 2. Train-Test Split
+# -------------------------------------------------------
+X_train, X_test, y_train, y_test = train_test_split(X, y, 
+                                                    test_size=0.2, 
+                                                    random_state=42)
+
+# -------------------------------------------------------
+# 3. LightGBM Regressor
+# -------------------------------------------------------
+# You can set various hyperparameters, here is a simple example
+lgbm_model = lgb.LGBMRegressor(
+    n_estimators=200,
+    learning_rate=0.05,
+    max_depth=3,
+    random_state=42
+)
+
+lgbm_model.fit(X_train, y_train,
+               eval_set=[(X_test, y_test)],
+               eval_metric='rmse',
+               early_stopping_rounds=20,
+               verbose=False)  # to suppress logs
+
+# -------------------------------------------------------
+# 4. Model Performance
+# -------------------------------------------------------
+from sklearn.metrics import mean_squared_error, r2_score
+
+y_pred = lgbm_model.predict(X_test)
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+print(f"Test MSE: {mse:.3f}")
+print(f"Test R2: {r2:.3f}")
+
+# -------------------------------------------------------
+# 5. SHAP for Directionality
+# -------------------------------------------------------
+# Initialize the SHAP explainer using the training data
+explainer = shap.TreeExplainer(lgbm_model)
+shap_values = explainer.shap_values(X_train)
+
+# Now we can look at the overall feature importance/direction
+# We'll use a summary_plot for global interpretability
+shap.summary_plot(shap_values, X_train)
+
+# (Optional) If you want to see how a single feature influences
+# predictions across all samples, we can do:
+shap.dependence_plot("feature_1", shap_values, X_train)
+
+# You can also choose a single sample to see local interpretation:
+# example_index = 0
+# shap.force_plot(explainer.expected_value,
+#                 shap_values[example_index, :],
+#                 X_train.iloc[example_index, :])
