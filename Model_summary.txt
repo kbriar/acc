@@ -26,10 +26,7 @@ def create_regression_stats_table(X, y, model=None):
     
     # Get coefficients
     coefficients = model.coef_
-    if hasattr(X, 'columns'):
-        feature_names = list(X.columns)
-    else:
-        feature_names = [f'X{i}' for i in range(X.shape[1])]
+    feature_names = list(X.columns)
     
     # Calculate predictions and residuals
     y_pred = model.predict(X)
@@ -40,15 +37,37 @@ def create_regression_stats_table(X, y, model=None):
     p = len(feature_names)
     dof = n - p - 1
     
-    # Calculate MSE and standard errors
+    # Calculate MSE
     mse = np.sum(residuals ** 2) / dof
-    X_matrix = np.matrix(X)
-    var_covar_matrix = mse * np.linalg.inv(X_matrix.T @ X_matrix)
-    std_errors = np.sqrt(np.diag(var_covar_matrix))
     
-    # Calculate t-values and p-values
-    t_values = coefficients / std_errors
-    p_values = 2 * (1 - stats.t.cdf(abs(t_values), dof))
+    # Convert X to numpy array and handle the matrix calculations
+    X_array = X.to_numpy()
+    
+    try:
+        # Calculate variance-covariance matrix
+        # Add small constant to diagonal for numerical stability
+        X_transpose_X = X_array.T @ X_array
+        X_transpose_X_diagonal = np.diagonal(X_transpose_X)
+        epsilon = 1e-8 * np.mean(X_transpose_X_diagonal)
+        X_transpose_X = X_transpose_X + np.eye(X_transpose_X.shape[0]) * epsilon
+        
+        # Calculate inverse
+        var_covar_matrix = mse * np.linalg.inv(X_transpose_X)
+        
+        # Calculate standard errors
+        std_errors = np.sqrt(np.diagonal(var_covar_matrix))
+        
+        # Calculate t-values and p-values
+        t_values = coefficients / std_errors
+        p_values = 2 * (1 - stats.t.cdf(abs(t_values), dof))
+        
+    except np.linalg.LinAlgError:
+        # Handle singular matrix error
+        print("Warning: Singular matrix detected. Using pseudo-inverse for calculations.")
+        var_covar_matrix = mse * np.linalg.pinv(X_array.T @ X_array)
+        std_errors = np.sqrt(np.diagonal(var_covar_matrix))
+        t_values = coefficients / std_errors
+        p_values = 2 * (1 - stats.t.cdf(abs(t_values), dof))
     
     # Create results DataFrame
     results_df = pd.DataFrame({
@@ -73,22 +92,28 @@ def create_regression_stats_table(X, y, model=None):
     
     # Add intercept information if available
     if hasattr(model, 'intercept_') and model.intercept_ != 0:
-        intercept_se = np.sqrt(mse * np.linalg.inv(X_matrix.T @ X_matrix)[0, 0])
-        intercept_t = model.intercept_ / intercept_se
-        intercept_p = 2 * (1 - stats.t.cdf(abs(intercept_t), dof))
-        
-        intercept_row = pd.DataFrame({
-            'Feature': ['Intercept'],
-            'Coefficient': [model.intercept_],
-            'Std Error': [intercept_se],
-            't-value': [intercept_t],
-            'p-value': [intercept_p],
-            'Significance': ['***' if intercept_p < 0.001 else 
-                           '**' if intercept_p < 0.01 else 
-                           '*' if intercept_p < 0.05 else '']
-        })
-        
-        results_df = pd.concat([intercept_row, results_df], ignore_index=True)
+        try:
+            # Calculate intercept statistics using the same stabilized approach
+            X_with_intercept = np.column_stack([np.ones(len(X_array)), X_array])
+            var_covar_matrix_with_intercept = mse * np.linalg.inv(X_with_intercept.T @ X_with_intercept)
+            intercept_se = np.sqrt(var_covar_matrix_with_intercept[0, 0])
+            intercept_t = model.intercept_ / intercept_se
+            intercept_p = 2 * (1 - stats.t.cdf(abs(intercept_t), dof))
+            
+            intercept_row = pd.DataFrame({
+                'Feature': ['Intercept'],
+                'Coefficient': [round(model.intercept_, 4)],
+                'Std Error': [round(intercept_se, 4)],
+                't-value': [round(intercept_t, 4)],
+                'p-value': [round(intercept_p, 4)],
+                'Significance': ['***' if intercept_p < 0.001 else 
+                               '**' if intercept_p < 0.01 else 
+                               '*' if intercept_p < 0.05 else '']
+            })
+            
+            results_df = pd.concat([intercept_row, results_df], ignore_index=True)
+        except np.linalg.LinAlgError:
+            print("Warning: Could not calculate intercept statistics due to singular matrix.")
     
     # Add R-squared and Adjusted R-squared
     r_squared = model.score(X, y)
@@ -101,6 +126,7 @@ def create_regression_stats_table(X, y, model=None):
     print("\nSignificance codes: 0 '***' 0.001 '**' 0.01 '*' 0.05\n")
     
     return results_df
+
 
 # Example usage:
 if __name__ == "__main__":
