@@ -1,0 +1,77 @@
+import pandas as pd
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error
+
+# Load your dataset
+# work_df2 = pd.read_csv("your_data.csv")  # Replace with your dataset
+
+# Step 1: Standardize the Data
+scaler = StandardScaler()
+scaled_data = scaler.fit_transform(work_df2)
+
+# Step 2: Fit PCA
+pca = PCA()
+pca.fit(scaled_data)
+
+# Step 3: Determine the Number of Components
+# Plot explained variance ratio
+explained_variance = pca.explained_variance_ratio_
+cumulative_explained_variance = np.cumsum(explained_variance)
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8, 5))
+plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker="o")
+plt.xlabel("Number of Components")
+plt.ylabel("Cumulative Explained Variance")
+plt.title("Explained Variance by Principal Components")
+plt.grid()
+plt.show()
+
+# Choose the number of components (e.g., 95% variance)
+n_components = np.argmax(cumulative_explained_variance >= 0.95) + 1
+print(f"Number of components to retain: {n_components}")
+
+# Step 4: Transform Data
+pca = PCA(n_components=n_components)
+principal_components = pca.fit_transform(scaled_data)
+
+# Create a DataFrame of the principal components
+pca_df = pd.DataFrame(data=principal_components, columns=[f"PC{i+1}" for i in range(n_components)])
+
+# Step 5: Use Transformed Data in Models
+# Example: Split data into features (X) and target (y)
+X = pca_df  # Principal components as features
+y = work_df2["target_column"]  # Replace with your target variable
+
+# Split into train and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Linear Regression
+print("Training Linear Regression...")
+lr_model = LinearRegression()
+lr_model.fit(X_train, y_train)
+y_pred_lr = lr_model.predict(X_test)
+mse_lr = mean_squared_error(y_test, y_pred_lr)
+print(f"Linear Regression MSE: {mse_lr}")
+
+# Gradient Boosting Machine (GBM)
+print("Training Gradient Boosting Machine...")
+gbm_model = GradientBoostingRegressor(random_state=42)
+gbm_model.fit(X_train, y_train)
+y_pred_gbm = gbm_model.predict(X_test)
+mse_gbm = mean_squared_error(y_test, y_pred_gbm)
+print(f"GBM MSE: {mse_gbm}")
+
+# Neural Network (using a simple MLP)
+from sklearn.neural_network import MLPRegressor
+print("Training Neural Network...")
+nn_model = MLPRegressor(hidden_layer_sizes=(50, 50), max_iter=1000, random_state=42)
+nn_model.fit(X_train, y_train)
+y_pred_nn = nn_model.predict(X_test)
+mse_nn = mean_squared_error(y_test, y_pred_nn)
+print(f"Neural Network MSE: {mse_nn}")
