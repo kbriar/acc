@@ -1,0 +1,209 @@
+def percentile_outliers_overall(df, numeric_col, lower_p=0.01, upper_p=0.99):
+    """
+    1) Compute overall percentile cutoffs for numeric_col.
+    2) Identify rows outside [lower_cut, upper_cut].
+    3) Return outlier rows; print boxplot with labeled outliers.
+    """
+    lower_cut = df[numeric_col].quantile(lower_p)
+    upper_cut = df[numeric_col].quantile(upper_p)
+    
+    outliers_df = df[
+        (df[numeric_col] < lower_cut) | (df[numeric_col] > upper_cut)
+    ].copy()
+    
+    print(f"[Overall Percentile] Found {len(outliers_df)} outliers for {numeric_col}.")
+
+    # Boxplot
+    plt.figure(figsize=(6,4))
+    sns.boxplot(data=df, y=numeric_col, color='lightgreen')
+    plt.title(f"Overall Percentile Outliers: {numeric_col}")
+
+    # Label outliers
+    for idx, row in outliers_df.iterrows():
+        plt.text(
+            x=0,
+            y=row[numeric_col],
+            s=str(idx),
+            color='red',
+            fontsize=8,
+            va='bottom'
+        )
+    
+    plt.show()
+    
+    return outliers_df
+
+
+
+def percentile_outliers_by_region(
+    df, 
+    numeric_col, 
+    region_col='Region', 
+    lower_p=0.01, 
+    upper_p=0.99
+):
+    """
+    Group by Region; compute [lower_cut, upper_cut] for each group.
+    Return outlier rows; print boxplot with labeled outliers.
+    """
+    # Compute group-wise percentile bounds
+    def region_bounds(series):
+        l_cut = series.quantile(lower_p)
+        u_cut = series.quantile(upper_p)
+        return (l_cut, u_cut)
+    
+    pctl_bounds = (
+        df.groupby(region_col)[numeric_col]
+          .apply(region_bounds)
+          .reset_index(name='bounds')
+    )
+    
+    df_merged = pd.merge(df, pctl_bounds, on=region_col, how='left')
+    df_merged[['lower_cut','upper_cut']] = pd.DataFrame(
+        df_merged['bounds'].tolist(),
+        index=df_merged.index
+    )
+    
+    # Identify outliers
+    outliers_df = df_merged[
+        (df_merged[numeric_col] < df_merged['lower_cut']) |
+        (df_merged[numeric_col] > df_merged['upper_cut'])
+    ].copy()
+    
+    print(f"[Percentile by Region] Found {len(outliers_df)} outliers for {numeric_col}.")
+
+    # Boxplot by region
+    plt.figure(figsize=(8,5))
+    sns.boxplot(data=df, x=region_col, y=numeric_col, color='lightgreen')
+    plt.title(f"Percentile Outliers by {region_col}: {numeric_col}")
+
+    # Label outliers
+    for idx, row in outliers_df.iterrows():
+        x_val = list(df[region_col].unique()).index(row[region_col])
+        plt.text(
+            x=x_val,
+            y=row[numeric_col],
+            s=str(idx),
+            color='red',
+            fontsize=8,
+            va='bottom'
+        )
+
+    plt.show()
+
+    return outliers_df.drop(columns=['bounds','lower_cut','upper_cut'])
+
+#--------------------------------------------------------------------------
+
+def get_iqr_bounds(series, factor=1.5):
+    """
+    Given a Pandas Series, compute IQR-based lower and upper bounds:
+      lower = Q1 - factor * IQR
+      upper = Q3 + factor * IQR
+    Returns (lower_bound, upper_bound).
+    """
+    Q1 = series.quantile(0.25)
+    Q3 = series.quantile(0.75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - factor * IQR
+    upper_bound = Q3 + factor * IQR
+    return lower_bound, upper_bound
+
+
+
+def iqr_outliers_overall(df, numeric_col, factor=1.5):
+    """
+    1) Compute overall IQR bounds for `numeric_col`.
+    2) Return a DataFrame of outliers.
+    3) Print a boxplot with outliers labeled.
+    """
+    # Compute overall bounds
+    lower_bound, upper_bound = get_iqr_bounds(df[numeric_col], factor)
+
+    # Identify outlier rows
+    outliers_df = df[
+        (df[numeric_col] < lower_bound) | (df[numeric_col] > upper_bound)
+    ].copy()
+    
+    # Print number of outliers
+    print(f"[Overall IQR] Found {len(outliers_df)} outliers for {numeric_col}.")
+
+    # Boxplot
+    plt.figure(figsize=(6, 4))
+    sns.boxplot(data=df, y=numeric_col, color='lightblue')
+    plt.title(f"Overall IQR Outliers: {numeric_col}")
+    
+    # Label the outlier points directly on the plot
+    # We'll do a small vertical shift to position labels
+    for idx, row in outliers_df.iterrows():
+        plt.text(
+            x=0, 
+            y=row[numeric_col], 
+            s=str(idx),  # labeling by DataFrame index
+            color='red', 
+            fontsize=8,
+            va='bottom'  # shift label slightly above the point
+        )
+    
+    plt.show()
+
+    return outliers_df
+
+
+def iqr_outliers_by_region(df, numeric_col, region_col='Region', factor=1.5):
+    """
+    1) Compute group-wise IQR bounds for each Region.
+    2) Return a DataFrame of outliers.
+    3) Print a boxplot of numeric_col grouped by region, with outliers labeled.
+    """
+    # Calculate IQR bounds for each region
+    iqr_bounds = (
+        df.groupby(region_col)[numeric_col]
+          .apply(lambda s: get_iqr_bounds(s, factor=factor))
+          .reset_index(name='bounds')
+    )
+    # iqr_bounds has columns: [Region, bounds=(lower, upper)]
+
+    # Merge bounds back
+    df_merged = pd.merge(df, iqr_bounds, on=region_col, how='left')
+    df_merged[['lower_bound','upper_bound']] = pd.DataFrame(
+        df_merged['bounds'].tolist(), 
+        index=df_merged.index
+    )
+    
+    # Identify outliers
+    outliers_df = df_merged[
+        (df_merged[numeric_col] < df_merged['lower_bound']) |
+        (df_merged[numeric_col] > df_merged['upper_bound'])
+    ].copy()
+    
+    print(f"[IQR by Region] Found {len(outliers_df)} outliers for {numeric_col}.")
+
+    # Boxplot by region
+    plt.figure(figsize=(8, 5))
+    sns.boxplot(data=df, x=region_col, y=numeric_col, color='lightblue')
+    plt.title(f"IQR Outliers by {region_col}: {numeric_col}")
+    
+    # Label outlier points
+    # We'll overlay a scatter for outliers, then text
+    for idx, row in outliers_df.iterrows():
+        x_val = list(df[region_col].unique()).index(row[region_col])
+        plt.text(
+            x=x_val, 
+            y=row[numeric_col], 
+            s=str(idx),
+            color='red',
+            fontsize=8,
+            va='bottom'
+        )
+    
+    plt.show()
+
+    return outliers_df.drop(columns=['bounds','lower_bound','upper_bound'])
+
+
+
+
+
+
+
