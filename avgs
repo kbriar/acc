@@ -1,0 +1,50 @@
+import pandas as pd
+
+# Sort for country-based calculations
+df = df.sort_values(['Country','Month']).reset_index(drop=True)
+
+# 1) Country-wise past months average
+df['country_avg_past_months'] = (
+    df.groupby('Country')['accident_rate']
+      .apply(lambda s: s.shift(1).expanding().mean())
+)
+
+# 2) Country-wise previous month
+df['country_accident_rate_prev_month'] = (
+    df.groupby('Country')['accident_rate'].shift(1)
+)
+
+# Sort for region-based calculations
+df = df.sort_values(['Region','Month']).reset_index(drop=True)
+
+# 3) Region-wise past months average
+df['region_avg_past_months'] = (
+    df.groupby('Region')['accident_rate']
+      .apply(lambda s: s.shift(1).expanding().mean())
+)
+
+print(df)
+
+# List of columns to fill using country-level overall average
+country_cols = ['country_avg_past_months', 'country_accident_rate_prev_month']
+
+for col in country_cols:
+    df[col] = df.groupby('Country')[col].transform(
+        lambda group_series: group_series.fillna(group_series.mean())
+    )
+df['region_avg_past_months'] = (
+    df.groupby('Region')['region_avg_past_months']
+      .transform(lambda group_series: group_series.fillna(group_series.mean()))
+)
+
+df[col] = (
+    df.groupby('Country')[col]
+      .apply(lambda group_series: group_series.fillna(group_series.mean()))
+      .reset_index(level=0, drop=True)
+)
+
+
+df['region_avg_past_months'] = (
+    df.groupby('Region')['region_avg_past_months']
+      .transform(lambda group_series: group_series.fillna(group_series.mean()))
+)
