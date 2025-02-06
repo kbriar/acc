@@ -1,3 +1,179 @@
+# Create empty lists to store the components
+seasonal_data = []
+trend_data = []
+
+# Extract components from results dictionary
+for region, decomp in results.items():
+    # Get seasonal component
+    seasonal = decomp.seasonal
+    for date, value in seasonal.items():
+        seasonal_data.append({
+            'Region': region,
+            'Month': date,
+            'Seasonality': value
+        })
+    
+    # Get trend component
+    trend = decomp.trend
+    for date, value in trend.items():
+        trend_data.append({
+            'Region': region,
+            'Month': date,
+            'trend': value
+        })
+
+# Convert to DataFrames
+seasonal_df = pd.DataFrame(seasonal_data)
+trend_df = pd.DataFrame(trend_data)
+
+# Merge seasonal and trend components
+components_df = seasonal_df.merge(trend_df, on=['Region', 'Month'])
+
+# Sort values and remove any duplicates
+components_df = components_df.sort_values(['Region', 'Month']).drop_duplicates()
+
+# Display the first few rows to verify
+print(components_df.head(10))
+
+# Verify the shape
+print("\nDataFrame Shape:", components_df.shape)
+print("\nUnique Regions:", components_df['Region'].nunique())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
