@@ -1,0 +1,44 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Sample data (replace with your actual data)
+data = {
+    'accident_rate': [10, 15, 20, 25, 30, 35, 40, 45, 50, 55],
+    'total_kms_driven': [1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500],
+    'Region': ['North', 'South', 'East', 'West', 'North', 'South', 'East', 'West', 'North', 'South']
+}
+df = pd.DataFrame(data)
+
+# Sample outlier data (replace with your actual outlier data)
+outlier_df = pd.DataFrame({
+    'accident_rate': [20, 50],
+    'total_kms_driven': [2000, 5000],
+    'Region': ['East', 'North']
+})
+
+# Create the scatter plot
+plt.figure(figsize=(10, 6))
+
+# Plot all points, color-coded by Region
+regions = df['Region'].unique()
+colors = {'North': 'blue', 'South': 'green', 'East': 'red', 'West': 'purple'}  # Define colors for each region
+
+for region in regions:
+    region_data = df[df['Region'] == region]
+    plt.scatter(region_data['accident_rate'], region_data['total_kms_driven'], 
+                color=colors[region], label=region, alpha=0.7)
+
+# Highlight and label outlier points
+for _, row in outlier_df.iterrows():
+    plt.scatter(row['accident_rate'], row['total_kms_driven'], 
+                color='orange', edgecolor='black', s=100, label='Outlier' if _ == 0 else "")  # Highlight outliers
+    plt.text(row['accident_rate'], row['total_kms_driven'], 
+             f"{row['accident_rate']}", fontsize=9, ha='right')  # Label with accident rate
+
+# Add labels, title, and legend
+plt.xlabel('Accident Rate')
+plt.ylabel('Total KMs Driven')
+plt.title('Scatter Plot: Accident Rate vs Total KMs Driven (Color-coded by Region)')
+plt.legend(title='Region')
+plt.grid(alpha=0.3)
+plt.show()
