@@ -1,0 +1,113 @@
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------------------------
+# 1) SAMPLE DATA SETUP
+#    (Replace this with your actual df, which has Region, Country, Month, accident_rate)
+# ---------------------------------------------------------------------
+np.random.seed(42)
+
+# Example: 4 Regions, each with monthly data for 2 years (24 months),
+# but one region is missing 2023-12
+# We assume each row has Region, Country, Month, accident_rate
+dates = pd.date_range('2022-01-01', '2023-12-01', freq='MS')  # 24 months
+all_data = []
+regions = ['North','South','East','West']
+countries = ['A','B','C']
+
+for r in regions:
+    for d in dates:
+        # Simulate a missing month for 'West' in 2023-12
+        if r == 'West' and d == pd.to_datetime('2023-12-01'):
+            continue  # skip this row => "missing" data for West, Dec 2023
+        # Make up some random accident_rate
+        for c in countries:
+            accident_rate = np.random.randint(10, 50)
+            all_data.append([r, c, d, accident_rate])
+
+df = pd.DataFrame(all_data, columns=['Region','Country','Month','accident_rate'])
+
+# Check we have 2023-12 missing for Region='West'
+# print(df[(df['Region']=='West') & (df['Month']=='2023-12-01')])  # Should be empty
+
+
+# ---------------------------------------------------------------------
+# 2) FILL MISSING MONTHS PER REGION (REINDEX)
+# ---------------------------------------------------------------------
+all_min_date = df['Month'].min()
+all_max_date = df['Month'].max()
+
+def ensure_monthly(group):
+    """For each Region group, ensure we have a row for every monthly date.
+       Returns a DataFrame reindexed to cover all months from all_min_date to all_max_date."""
+    group = group.set_index('Month').sort_index()
+    full_idx = pd.date_range(start=all_min_date, end=all_max_date, freq='MS')
+    group = group.reindex(full_idx)
+    return group
+
+# We only need to fill at the Region × Month level. 
+# So let's drop Country for the reindexing step, or first aggregate by Region+Month if needed.
+# However, to keep it simple, we'll do it raw: multiple rows for each Month, one per country.
+# If you prefer a single time series per Region, first group by Region+Month to combine countries.
+# For demonstration, let's keep all countries but still fill the missing Month:
+
+# Group by (Region) so each region is reindexed on its monthly range
+df_filled = df.groupby('Region').apply(ensure_monthly)
+
+# After groupby+apply, 'Region' is now in the index. We'll restore the flat structure:
+df_filled = df_filled.reset_index(level=0).rename_axis('Month').reset_index()
+
+# 'Month' is now a column again, 'Region' is a column, we may have NaNs for 'Country' and 'accident_rate' in missing month
+# Let's fill 'Country' forward or just leave as is. For 'accident_rate', it's typically unknown, so keep NaN or fill with 0.
+df_filled['accident_rate'] = df_filled['accident_rate'].fillna(0)  # example fill with 0
+df_filled['Country'] = df_filled['Country'].fillna('Unknown')
+
+
+# ---------------------------------------------------------------------
+# 3) AGGREGATE TO ONE TIME SERIES PER REGION (IF DESIRED)
+#    Typically for decomposition, you want one numeric series per region-month.
+#    We'll sum or average across countries. Let's do a sum as an example.
+# ---------------------------------------------------------------------
+df_region_month = (
+    df_filled.groupby(['Region','Month'], as_index=False)['accident_rate']
+             .sum()
+             .sort_values(['Region','Month'])
+)
+
+# ---------------------------------------------------------------------
+# 4) SEASONAL DECOMPOSITION
+#    We'll do it for each region separately, because we want region-level monthly decomposition.
+# ---------------------------------------------------------------------
+results = {}  # store decomposition for each region
+
+for region, grp in df_region_month.groupby('Region'):
+    grp = grp.sort_values('Month').set_index('Month')
+
+    # We have 2 years of monthly data => period=12 for annual seasonality
+    # 'additive' is typical if magnitude of seasonal fluctuations is roughly constant
+    decomp = sm.tsa.seasonal_decompose(
+        grp['accident_rate'], 
+        period=12, 
+        model='additive', 
+        extrapolate_trend='freq'
+    )
+    results[region] = decomp
+
+    # -----------------------------------------------------------------
+    # 5) PLOTTING THE SEASONAL COMPONENT
+    #    Let's plot each region's entire decomposition (observed, trend, seasonal, resid)
+    # -----------------------------------------------------------------
+    fig = decomp.plot()
+    fig.suptitle(f"Seasonal Decomposition for Region: {region}", fontsize=14)
+    plt.show()
+
+# If you only want the seasonal component plot, you could do:
+# results[region].seasonal.plot(...)
+
+# ---------------------------------------------------------------------
+# DONE. 'results' now has the decomposition for each region. 
+# 'df_filled' is your data with the missing month inserted for 'West' in 2023-12.
+# 'df_region_month' has one row per region-month for the final decomposition.
+# ---------------------------------------------------------------------
