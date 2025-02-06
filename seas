@@ -3,6 +3,117 @@ import numpy as np
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 
+# Data setup (keeping your original code up to df_agg creation)
+np.random.seed(42)
+dates = pd.date_range('2022-01-01', '2023-12-01', freq='MS')
+all_data = []
+regions = ['North','South','East','West']
+countries = ['A','B','C']
+for r in regions:
+    for d in dates:
+        if r == 'West' and d == pd.to_datetime('2023-12-01'):
+            continue
+        for c in countries:
+            accident_rate = np.random.randint(10, 50)
+            all_data.append([r, c, d, accident_rate])
+df = pd.DataFrame(all_data, columns=['Region','Country','Month','accident_rate'])
+df_agg = df.groupby(['Region', 'Month'], as_index=False)['accident_rate'].sum()
+
+# Modified reindexing approach
+all_min_date = df_agg['Month'].min()
+all_max_date = df_agg['Month'].max()
+
+# Create a complete date range for all regions
+full_dates = pd.date_range(start=all_min_date, end=all_max_date, freq='MS')
+regions = df_agg['Region'].unique()
+
+# Create a MultiIndex with all region-date combinations
+multi_idx = pd.MultiIndex.from_product([regions, full_dates], names=['Region', 'Month'])
+df_filled = (df_agg.set_index(['Region', 'Month'])
+             .reindex(multi_idx)
+             .fillna(0)
+             .reset_index())
+
+# Seasonal decomposition
+results = {}
+for region, grp in df_filled.groupby('Region'):
+    grp = grp.sort_values('Month').set_index('Month')
+    decomp = sm.tsa.seasonal_decompose(
+        grp['accident_rate'], 
+        period=12, 
+        model='additive', 
+        extrapolate_trend='freq'
+    )
+    results[region] = decomp
+    fig = decomp.plot()
+    fig.suptitle(f"Seasonal Decomposition for Region: {region}", fontsize=14)
+    plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+
 # ---------------------------------------------------------------------
 # 1) SAMPLE DATA SETUP
 #    (Replace this with your actual df, which has Region, Country, Month, accident_rate)
