@@ -1,0 +1,129 @@
+import pandas as pd
+
+# ----------------------------------------------------------------------------
+# 1) READ & PREPARE THE DATA
+# ----------------------------------------------------------------------------
+# Suppose you load your dataset from a CSV or Excel. Example:
+# df = pd.read_csv('your_file.csv')
+
+# For demonstration, let’s imagine you already have a DataFrame "df" with these columns:
+#   Region, Country, date, Driver, Driver_Total_Hours, Driver_Unique_cars, Driver_Avg_Score
+# Make sure 'date' is converted to a datetime type:
+
+df['date'] = pd.to_datetime(df['date'], format='%d/%m/%Y')  # adjust format if needed
+
+# Extract year and month as numeric columns:
+df['year'] = df['date'].dt.year
+df['month'] = df['date'].dt.month
+
+# ----------------------------------------------------------------------------
+# 2) AGGREGATE TO region x country x year x month x driver
+# ----------------------------------------------------------------------------
+group_cols = ['Region', 'Country', 'year', 'month', 'Driver']
+
+# We need:
+#   - Total_Hours: sum of Driver_Total_Hours
+#   - Total_Weeks: distinct count of weekly records (or distinct date if each date is a unique week)
+#   - Total_Distinct_Vehicles: ideally distinct vehicle IDs, but if you only have an integer,
+#       you can sum it or treat it as an approximation
+#   - Avg_Score: average of Driver_Avg_Score
+
+df_agg = df.groupby(group_cols).agg(
+    Total_Hours=('Driver_Total_Hours', 'sum'),
+    Total_Weeks=('date', 'nunique'),   # counting distinct dates as "weeks"
+    Total_Vehicles=('Driver_Unique_cars', 'sum'),  # Summation if no real vehicle ID
+    Avg_Score=('Driver_Avg_Score', 'mean')
+).reset_index()
+
+# ----------------------------------------------------------------------------
+# 3) (Part 1) -> df_agg now holds the main metrics at the driver level
+#    region x country x year x month x driver
+# ----------------------------------------------------------------------------
+#   df_agg columns: Region, Country, year, month, Driver,
+#                   Total_Hours, Total_Weeks, Total_Vehicles, Avg_Score
+
+# ----------------------------------------------------------------------------
+# 4) (Part 2) Calculate the MAX % of total hours in each region x country x year x month
+# ----------------------------------------------------------------------------
+# First, get the sum of hours for each (Region, Country, year, month):
+df_agg['Group_Hours'] = df_agg.groupby(['Region','Country','year','month'])['Total_Hours'] \
+                              .transform('sum')
+
+# Compute each driver's share of that monthly group total:
+df_agg['Driver_Hour_Share'] = df_agg['Total_Hours'] / df_agg['Group_Hours']
+
+# Find the maximum share in each group:
+df_max_share = (
+    df_agg
+    .groupby(['Region','Country','year','month'], as_index=False)['Driver_Hour_Share']
+    .max()
+    .rename(columns={'Driver_Hour_Share': 'Max_Driver_Hour_Share'})
+)
+
+# df_max_share now has columns: Region, Country, year, month, Max_Driver_Hour_Share
+
+# ----------------------------------------------------------------------------
+# 5) (Part 3) Identify new drivers & compute % of total hours by new drivers
+# ----------------------------------------------------------------------------
+# A driver is "new" for the first month they appear + the next 2 months.
+
+# 5A. Convert (year, month) into a single date or Period to track easily:
+df_agg['MonthYear'] = pd.to_datetime(
+    df_agg[['year','month']].assign(day=1)  # day=1 so we get the first of that month
+)
+
+# 5B. For each driver, find the earliest MonthYear they appear:
+driver_first_appearance = (
+    df_agg
+    .groupby('Driver', as_index=False)['MonthYear']
+    .min()
+    .rename(columns={'MonthYear': 'First_MonthYear'})
+)
+
+# 5C. Merge back to label each row with the driver’s first appearance:
+df_agg = df_agg.merge(driver_first_appearance, on='Driver', how='left')
+
+# 5D. Define a function that checks how many months have elapsed:
+def is_new_driver(row):
+    # difference in total months
+    diff_in_months = ((row['MonthYear'].year - row['First_MonthYear'].year) * 12
+                      + (row['MonthYear'].month - row['First_MonthYear'].month))
+    # new if diff <= 2
+    return diff_in_months <= 2
+
+df_agg['is_new_driver'] = df_agg.apply(is_new_driver, axis=1)
+
+# 5E. Compute total hours by region/country/year/month, splitting out new vs. all
+df_new_hours = (
+    df_agg
+    .groupby(['Region','Country','year','month','MonthYear'], as_index=False)
+    .agg(
+        AllDriver_Hours=('Total_Hours','sum'),
+        NewDriver_Hours=('Total_Hours',
+                         lambda x: x[df_agg.loc[x.index, 'is_new_driver']].sum())
+    )
+)
+
+df_new_hours['Pct_NewDriver_Hours'] = (
+    df_new_hours['NewDriver_Hours'] / df_new_hours['AllDriver_Hours']
+)
+
+# 5F. Exclude the first 3 months of the *entire dataset* from the final measure
+#     i.e. do NOT show the new-driver % for those months.
+min_monthyear = df_new_hours['MonthYear'].min()
+exclude_threshold = min_monthyear + pd.DateOffset(months=3)
+
+df_new_hours_final = df_new_hours[df_new_hours['MonthYear'] >= exclude_threshold]
+
+# df_new_hours_final has the final "Pct_NewDriver_Hours" for each group, after skipping first 3 months.
+
+# ----------------------------------------------------------------------------
+# Final DataFrames:
+# ----------------------------------------------------------------------------
+# 1) df_agg: region x country x year x month x driver metrics
+# 2) df_max_share: for each region x country x year x month, the max share of hours by a single driver
+# 3) df_new_hours_final: for each region x country x year x month (excluding first 3 months),
+#       the fraction of total hours driven by new drivers.
+# ----------------------------------------------------------------------------
+
+# EXAMPLE: Merge them if you want a single table or do further analysis as needed.
