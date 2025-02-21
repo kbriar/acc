@@ -99,3 +99,29 @@ def evaluate_model(y_train=None, y_train_pred=None,
     
     return df_results
 
+
+
+def plot_hist_kde(arr1, arr2, bins=30, labels=("Array 1", "Array 2")):
+    """
+    Plots histogram and KDE overlay for two arrays.
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Histogram
+    plt.hist(arr1, bins=bins, alpha=0.3, label=f"{labels[0]} Histogram", density=True)
+    plt.hist(arr2, bins=bins, alpha=0.3, label=f"{labels[1]} Histogram", density=True)
+    
+    # KDE
+    sns.kdeplot(arr1, label=f"{labels[0]} KDE", linewidth=2)
+    sns.kdeplot(arr2, label=f"{labels[1]} KDE", linewidth=2)
+    
+    plt.xlabel("Value")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.title("Histogram + KDE Comparison")
+    plt.show()
+
+# Example usage:
+# plot_hist_kde(y_train, y_test)
+
+
