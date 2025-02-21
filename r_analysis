@@ -25,7 +25,13 @@ def evaluate_model(y_train=None, y_train_pred=None,
     """
     
     def compute_metrics(y_true, y_pred):
-        """Helper function to compute metrics"""
+        """Helper function to compute metrics after flattening"""
+        y_true = np.array(y_true).ravel()  # Convert to 1D
+        y_pred = np.array(y_pred).ravel()  # Convert to 1D
+        
+        if len(y_true) == 0 or len(y_pred) == 0:  # Ensure no empty arrays
+            return np.nan, np.nan, np.nan, 0
+        
         r2 = r2_score(y_true, y_pred)
         mae = mean_absolute_error(y_true, y_pred)
         rmse = np.sqrt(mean_squared_error(y_true, y_pred))
@@ -67,10 +73,21 @@ def evaluate_model(y_train=None, y_train_pred=None,
         
         for name, (y_true, y_pred) in datasets.items():
             if y_true is not None and y_pred is not None:
+                y_true = np.array(y_true).ravel()  # Convert to 1D
+                y_pred = np.array(y_pred).ravel()  # Convert to 1D
+                
                 df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
                 df["Group"] = pd.cut(df["y_true"], bins=bins, labels=group_labels)
                 
+                df = df.dropna(subset=["Group"])  # Drop empty groups
+                
+                if df.empty:  # Skip if all data was dropped
+                    continue
+                
+                # Compute grouped metrics
                 grouped_metrics = df.groupby("Group").apply(lambda g: compute_metrics(g["y_true"], g["y_pred"]))
+                
+                # Convert tuple to DataFrame
                 grouped_metrics = grouped_metrics.apply(pd.Series, index=["R²", "MAE", "RMSE", "Count"])
                 grouped_metrics["Set"] = name
                 grouped_results.append(grouped_metrics)
@@ -82,8 +99,3 @@ def evaluate_model(y_train=None, y_train_pred=None,
     
     return df_results
 
-# Example Usage:
-# df_metrics = evaluate_model(y_train, y_train_pred, y_test=y_test, y_test_pred=y_test_pred, group_by=False)
-# df_metrics, df_grouped = evaluate_model(y_train, y_train_pred, y_val, y_val_pred, group_by=True)
-# print(df_metrics)
-# print(df_grouped)
