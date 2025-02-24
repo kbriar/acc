@@ -1,0 +1,29 @@
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.calibration import CalibratedClassifierCV
+
+# Create a logistic regression model with balanced class weights.
+lr_weighted = LogisticRegression(max_iter=1000, class_weight='balanced')
+
+# Use cross validation and calibrate if desired.
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+calibrated_lr_weighted = CalibratedClassifierCV(estimator=lr_weighted, method='sigmoid', cv=cv)
+
+# Get cross-validated probability predictions.
+y_prob_cv_weighted = cross_val_predict(calibrated_lr_weighted, X, y, cv=cv, method='predict_proba')[:, 1]
+
+# You can then repeat the threshold tuning process with y_prob_cv_weighted:
+# For example, evaluating metrics at the default threshold of 0.5:
+y_pred_weighted = (y_prob_cv_weighted >= 0.5).astype(int)
+cm_weighted = confusion_matrix(y, y_pred_weighted)
+acc_weighted = accuracy_score(y, y_pred_weighted)
+prec_weighted = precision_score(y, y_pred_weighted, zero_division=0)
+rec_weighted = recall_score(y, y_pred_weighted)
+roc_auc_weighted = roc_auc_score(y, y_prob_cv_weighted)
+
+print("Weighted Logistic Regression (default threshold=0.5):")
+print("Confusion Matrix:\n", cm_weighted)
+print(f"Accuracy: {acc_weighted:.4f}")
+print(f"Precision: {prec_weighted:.4f}")
+print(f"Recall: {rec_weighted:.4f}")
+print(f"ROC AUC: {roc_auc_weighted:.4f}")
