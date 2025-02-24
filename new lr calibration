@@ -1,0 +1,60 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.metrics import (confusion_matrix, accuracy_score,
+                             precision_score, recall_score, roc_auc_score,
+                             brier_score_loss)
+
+# --- Data Loading ---
+# Replace with your actual data source.
+df = pd.read_csv("your_data.csv")  # Ensure your CSV has a column named 'accident'
+X = df.drop(columns=['accident'])
+y = df['accident']
+
+# --- Define Cross Validation ---
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+# --- Base Model ---
+lr = LogisticRegression(max_iter=1000)
+
+# --- Model Recalibration ---
+# Calibrate the logistic regression model using Platt scaling (sigmoid method).
+calibrated_lr = CalibratedClassifierCV(base_estimator=lr, method='sigmoid', cv=cv)
+
+# --- Cross-Validation Predictions ---
+# Use cross_val_predict to obtain out-of-sample predictions for both class labels and probabilities.
+y_pred_cv = cross_val_predict(calibrated_lr, X, y, cv=cv, method='predict')
+y_prob_cv = cross_val_predict(calibrated_lr, X, y, cv=cv, method='predict_proba')[:, 1]
+
+# --- Evaluation Metrics ---
+cm = confusion_matrix(y, y_pred_cv)
+accuracy = accuracy_score(y, y_pred_cv)
+precision = precision_score(y, y_pred_cv)
+recall = recall_score(y, y_pred_cv)
+roc_auc = roc_auc_score(y, y_prob_cv)
+brier = brier_score_loss(y, y_prob_cv)
+
+print("Cross-validated metrics:")
+print("Confusion Matrix:")
+print(cm)
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"ROC AUC: {roc_auc:.4f}")
+print(f"Brier Score: {brier:.4f}")
+
+# --- Calibration Curve ---
+# Compute calibration curve data.
+fraction_of_positives, mean_predicted_value = calibration_curve(y, y_prob_cv, n_bins=10)
+
+plt.figure(figsize=(8, 6))
+plt.plot(mean_predicted_value, fraction_of_positives, "s-", label="Calibrated")
+plt.plot([0, 1], [0, 1], "k--", label="Perfect Calibration")
+plt.xlabel("Mean Predicted Probability")
+plt.ylabel("Fraction of Positives")
+plt.title("Calibration Curve")
+plt.legend()
+plt.show()
