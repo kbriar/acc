@@ -1,0 +1,58 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (confusion_matrix, accuracy_score,
+                             precision_score, recall_score, roc_auc_score)
+import statsmodels.api as sm
+
+# --- Data Preparation ---
+# Replace the following line with your own data loading step.
+# For example: df = pd.read_csv("your_data.csv")
+df = pd.DataFrame()  # <-- load your DataFrame here
+
+# Assume 'accident' is the target variable and all other columns are features.
+X = df.drop(columns=['accident'])
+y = df['accident']
+
+# Split the dataset into training and testing sets.
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# --- Logistic Regression using scikit-learn ---
+# Create and fit the logistic regression model.
+lr = LogisticRegression(max_iter=1000)  # Increase max_iter if necessary
+lr.fit(X_train, y_train)
+
+# Make predictions on the test set.
+y_pred = lr.predict(X_test)
+y_prob = lr.predict_proba(X_test)[:, 1]  # Probabilities for the positive class (accident=1)
+
+# Compute evaluation metrics.
+cm = confusion_matrix(y_test, y_pred)
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_prob)
+
+print("Confusion Matrix:")
+print(cm)
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"ROC AUC: {roc_auc:.4f}")
+
+# --- Pseudo R² using statsmodels (McFadden's R²) ---
+# Add a constant term to include the intercept.
+X_train_sm = sm.add_constant(X_train)
+
+# Fit the logistic regression model with statsmodels.
+logit_model = sm.Logit(y_train, X_train_sm)
+result = logit_model.fit(disp=False)  # disp=False to turn off convergence output
+
+# Print the summary from statsmodels.
+print(result.summary())
+
+# Calculate McFadden's pseudo R².
+ll_model = result.llf     # Log-likelihood of the fitted model.
+ll_null = result.llnull   # Log-likelihood of the null model.
+pseudo_r2 = 1 - (ll_model / ll_null)
+print(f"Pseudo R² (McFadden): {pseudo_r2:.4f}")
