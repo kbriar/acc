@@ -1,3 +1,122 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, roc_auc_score
+
+# Function to evaluate metrics at a given threshold.
+def evaluate_threshold(threshold, y_true, y_prob):
+    y_pred = (y_prob >= threshold).astype(int)
+    cm = confusion_matrix(y_true, y_pred)
+    acc = accuracy_score(y_true, y_pred)
+    prec = precision_score(y_true, y_pred, zero_division=0)
+    rec = recall_score(y_true, y_pred)
+    roc_auc = roc_auc_score(y_true, y_prob)  # ROC AUC doesn't depend on threshold
+    return y_pred, cm, acc, prec, rec, roc_auc
+
+# Assume y (true labels) and y_prob_cv (predicted probabilities from cross-validation) are already computed.
+# For demonstration, here's how you might have obtained them:
+#
+# from sklearn.calibration import CalibratedClassifierCV
+# from sklearn.linear_model import LogisticRegression
+# from sklearn.model_selection import StratifiedKFold, cross_val_predict
+#
+# cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+# lr = LogisticRegression(max_iter=1000)
+# # If using scikit-learn 1.2+ use estimator parameter instead of base_estimator:
+# calibrated_lr = CalibratedClassifierCV(estimator=lr, method='sigmoid', cv=cv)
+# y_prob_cv = cross_val_predict(calibrated_lr, X, y, cv=cv, method='predict_proba')[:, 1]
+
+# Sweep thresholds between 0 and 1
+thresholds = np.linspace(0, 1, 101)
+metrics = []
+for thresh in thresholds:
+    y_pred, cm, acc, prec, rec, roc_auc = evaluate_threshold(thresh, y, y_prob_cv)
+    metrics.append((thresh, acc, prec, rec, roc_auc, cm))
+
+# Convert metrics list to arrays for plotting.
+thresh_arr = np.array([m[0] for m in metrics])
+acc_arr = np.array([m[1] for m in metrics])
+prec_arr = np.array([m[2] for m in metrics])
+recall_arr = np.array([m[3] for m in metrics])
+
+# Plot Recall and Precision vs. Threshold
+plt.figure(figsize=(10,6))
+plt.plot(thresh_arr, recall_arr, label='Recall', marker='o')
+plt.plot(thresh_arr, prec_arr, label='Precision', marker='o')
+plt.xlabel('Decision Threshold')
+plt.ylabel('Metric Value')
+plt.title('Recall and Precision vs. Decision Threshold')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# For example, suppose you want to choose a threshold that guarantees at least 0.70 precision.
+desired_precision = 0.70
+candidate_thresholds = thresh_arr[prec_arr >= desired_precision]
+
+if candidate_thresholds.size > 0:
+    # You might choose the lowest threshold meeting the precision requirement to maximize recall.
+    best_threshold = candidate_thresholds[0]
+    y_pred_best, cm_best, acc_best, prec_best, rec_best, roc_auc_best = evaluate_threshold(best_threshold, y, y_prob_cv)
+    
+    print("Chosen threshold:", best_threshold)
+    print("Confusion Matrix at chosen threshold:")
+    print(cm_best)
+    print(f"Accuracy: {acc_best:.4f}")
+    print(f"Precision: {prec_best:.4f}")
+    print(f"Recall: {rec_best:.4f}")
+    print(f"ROC AUC: {roc_auc_best:.4f}")
+else:
+    print("No threshold meets the desired precision requirement.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.calibration import CalibratedClassifierCV
