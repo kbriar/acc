@@ -1,0 +1,95 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_predict
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, roc_auc_score, mean_squared_error, mean_absolute_error
+from lightgbm import LGBMRegressor
+
+# --- Data Preparation ---
+# Assume your dataset has columns: 'accident', 'total_km_driven', 'total_cars', 'no_of_drivers', 'hours_driven', etc.
+df = pd.read_csv("your_data.csv")
+
+# Create binary target: 0 if no accident, 1 if at least one accident
+df['accident_occurrence'] = (df['accident'] > 0).astype(int)
+# Calculate accident rate: (accident/total_km_driven) * 100000
+df['accident_rate'] = (df['accident'] / df['total_km_driven']) * 100000
+
+# Define your feature columns (update as needed)
+features = ['total_km_driven', 'total_cars', 'no_of_drivers', 'hours_driven']
+
+# --- Stage 1: Classification ---
+# Features and binary target for classification
+X_class = df[features]
+y_class = df['accident_occurrence']
+
+# Split data for classification (stratified for class imbalance)
+X_train_class, X_test_class, y_train_class, y_test_class = train_test_split(X_class, y_class, 
+                                                                            test_size=0.3, 
+                                                                            stratify=y_class, 
+                                                                            random_state=42)
+
+# Logistic Regression for classification
+clf = LogisticRegression(max_iter=1000, solver='liblinear')
+clf.fit(X_train_class, y_train_class)
+
+# Predictions and probabilities on test set
+y_pred_class = clf.predict(X_test_class)
+y_prob_class = clf.predict_proba(X_test_class)[:, 1]
+
+# Evaluation of classification
+cm = confusion_matrix(y_test_class, y_pred_class)
+accuracy = accuracy_score(y_test_class, y_pred_class)
+precision = precision_score(y_test_class, y_pred_class)
+recall = recall_score(y_test_class, y_pred_class)
+roc_auc = roc_auc_score(y_test_class, y_prob_class)
+
+print("Classification Metrics:")
+print("Confusion Matrix:\n", cm)
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"ROC AUC: {roc_auc:.4f}")
+
+# --- Stage 2: Regression ---
+# Use only the data where accidents occurred
+df_reg = df[df['accident_occurrence'] == 1]
+X_reg = df_reg[features]
+y_reg = df_reg['accident_rate']
+
+# Split regression data
+X_train_reg, X_test_reg, y_train_reg, y_test_reg = train_test_split(X_reg, y_reg, 
+                                                                    test_size=0.3, 
+                                                                    random_state=42)
+
+# LGBM Regressor for accident rate prediction
+reg = LGBMRegressor(random_state=42)
+reg.fit(X_train_reg, y_train_reg)
+y_pred_reg = reg.predict(X_test_reg)
+
+# Evaluation of regression
+rmse = np.sqrt(mean_squared_error(y_test_reg, y_pred_reg))
+mae = mean_absolute_error(y_test_reg, y_pred_reg)
+print("\nRegression Metrics (only for cases with accidents):")
+print(f"RMSE: {rmse:.4f}")
+print(f"MAE: {mae:.4f}")
+
+# --- Combining Predictions for New Data ---
+def predict_accident_rate(new_data):
+    """
+    new_data: a DataFrame with the same features as used above.
+    Returns: Predicted accident rate.
+    """
+    # First, classify if an accident occurs.
+    pred_class = clf.predict(new_data)
+    # Initialize predicted accident rate as 0.
+    pred_rate = np.zeros(len(new_data))
+    # For instances predicted to have an accident, predict accident rate.
+    idx = (pred_class == 1)
+    if np.any(idx):
+        pred_rate[idx] = reg.predict(new_data.loc[idx])
+    return pred_rate
+
+# Example usage:
+# new_data = X_test_class.iloc[:5]  # For demonstration
+# print("Combined Predicted Accident Rate:")
+# print(predict_accident_rate(new_data))
