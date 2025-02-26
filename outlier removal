@@ -1,0 +1,46 @@
+import pandas as pd
+import numpy as np
+
+# Assume EDA_df is your original DataFrame.
+df = EDA_df.copy()
+
+# --- Step 1: Remove Countries with Very Low Activity ---
+# Compute total km driven per country.
+country_total_km = df.groupby('Country')['total_km_driven'].sum()
+# Compute the average total km driven across all countries.
+avg_country_total_km = country_total_km.mean()
+# Define the threshold as 1% of the average total km driven.
+threshold = avg_country_total_km * 0.01
+
+# Identify countries to remove.
+countries_to_remove = country_total_km[country_total_km < threshold].index.tolist()
+
+# Filter out records from those countries.
+df_filtered = df[~df['Country'].isin(countries_to_remove)].copy()
+
+# --- Step 2: Flag Outlier Rows Based on the Given Conditions ---
+def get_outlier_reason(row):
+    reasons = []
+    # Condition 1: active cars are 0 (assuming total_car represents active cars)
+    if row['total_car'] == 0:
+        reasons.append("Active cars are 0")
+    # Condition 2: total km driven is <=200
+    if row['total_km_driven'] <= 200:
+        reasons.append("Total km driven <= 200")
+    return ", ".join(reasons)
+
+# Create a new column 'outlier_reason' based on the conditions.
+df_filtered['outlier_reason'] = df_filtered.apply(get_outlier_reason, axis=1)
+
+# Select only the rows where there is an outlier reason.
+outliers_df = df_filtered[df_filtered['outlier_reason'] != ""]
+
+# --- Step 3: Create Final DataFrame with Base Columns and the Outlier Reason ---
+base_columns = ['Region', 'Country', 'date', 'no.of.accident', 'total_km_driven', 
+                'total_car', 'total_days', 'avg_speed', 'all_driver', 
+                'accident_rate', 'avg_intensity_index', 'daily_intensity']
+
+outliers_df = outliers_df[base_columns + ['outlier_reason']]
+
+print("Outliers DataFrame:")
+print(outliers_df.head())
