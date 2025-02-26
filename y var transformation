@@ -1,0 +1,39 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import boxcox, yeojohnson
+
+# Assume df is your DataFrame and accident_rate is positive.
+# If accident_rate has zeros, we add a constant (e.g., 1) to avoid issues.
+
+# Log transformation
+df['accident_rate_log'] = np.log(df['accident_rate'] + 1)
+
+# Square root transformation
+df['accident_rate_sqrt'] = np.sqrt(df['accident_rate'])
+
+# Box-Cox transformation: Box-Cox requires strictly positive values.
+# Adding 1 if necessary.
+df['accident_rate_boxcox'], lam_boxcox = boxcox(df['accident_rate'] + 1)
+
+# Yeo-Johnson transformation: can handle zeros and negatives.
+df['accident_rate_yeojohnson'], lam_yj = yeojohnson(df['accident_rate'])
+
+# Plotting histograms to compare transformations
+fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+
+sns.histplot(df['accident_rate'], ax=axs[0,0], kde=True)
+axs[0,0].set_title("Original Accident Rate")
+
+sns.histplot(df['accident_rate_log'], ax=axs[0,1], kde=True)
+axs[0,1].set_title("Log Transformed")
+
+sns.histplot(df['accident_rate_sqrt'], ax=axs[1,0], kde=True)
+axs[1,0].set_title("Sqrt Transformed")
+
+sns.histplot(df['accident_rate_boxcox'], ax=axs[1,1], kde=True)
+axs[1,1].set_title("Box-Cox Transformed")
+
+plt.tight_layout()
+plt.show()
