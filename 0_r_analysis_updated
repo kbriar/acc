@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 def evaluate_model(y_train=None, y_train_pred=None, 
@@ -7,7 +9,8 @@ def evaluate_model(y_train=None, y_train_pred=None,
                    y_test=None, y_test_pred=None, 
                    group_by=False):
     """
-    Computes R², MAE, RMSE, and Count for Train, Validation, and Test sets.
+    Computes R², MAE, RMSE, Count, and Predicted Mean/Actual Mean ratio for 
+    Train, Validation, and Test sets.
     Allows grouping metrics based on given bins.
     
     Parameters:
@@ -30,20 +33,27 @@ def evaluate_model(y_train=None, y_train_pred=None,
         y_pred = np.array(y_pred).ravel()  # Convert to 1D
         
         if len(y_true) == 0 or len(y_pred) == 0:  # Ensure no empty arrays
-            return np.nan, np.nan, np.nan, 0
+            return np.nan, np.nan, np.nan, 0, np.nan
         
         r2 = r2_score(y_true, y_pred)
         mae = mean_absolute_error(y_true, y_pred)
         rmse = np.sqrt(mean_squared_error(y_true, y_pred))
         count = len(y_true)
-        return r2, mae, rmse, count
+        
+        actual_mean = np.mean(y_true)
+        pred_mean = np.mean(y_pred)
+        # Avoid division by zero
+        ratio = pred_mean / actual_mean if actual_mean != 0 else np.nan
+        
+        return r2, mae, rmse, count, ratio
 
     results = {
         "Set": [],
         "R²": [],
         "MAE": [],
         "RMSE": [],
-        "Count": []
+        "Count": [],
+        "Y_Pred_Mean/Actual_Mean": []
     }
 
     # Check which datasets are provided
@@ -55,12 +65,13 @@ def evaluate_model(y_train=None, y_train_pred=None,
 
     for name, (y_true, y_pred) in datasets.items():
         if y_true is not None and y_pred is not None:
-            r2, mae, rmse, count = compute_metrics(y_true, y_pred)
+            r2, mae, rmse, count, ratio = compute_metrics(y_true, y_pred)
             results["Set"].append(name)
             results["R²"].append(r2)
             results["MAE"].append(mae)
             results["RMSE"].append(rmse)
             results["Count"].append(count)
+            results["Y_Pred_Mean/Actual_Mean"].append(ratio)
 
     df_results = pd.DataFrame(results)
 
@@ -79,49 +90,40 @@ def evaluate_model(y_train=None, y_train_pred=None,
                 df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
                 df["Group"] = pd.cut(df["y_true"], bins=bins, labels=group_labels)
                 
-                df = df.dropna(subset=["Group"])  # Drop empty groups
+                df = df.dropna(subset=["Group"])  # Drop rows where the group is NaN
                 
                 if df.empty:  # Skip if all data was dropped
                     continue
                 
-                # Compute grouped metrics
+                # Compute grouped metrics per bin
                 grouped_metrics = df.groupby("Group").apply(lambda g: compute_metrics(g["y_true"], g["y_pred"]))
                 
-                # Convert tuple to DataFrame
-                grouped_metrics = grouped_metrics.apply(pd.Series, index=["R²", "MAE", "RMSE", "Count"])
+                # Convert tuple to DataFrame with new column names
+                grouped_metrics = grouped_metrics.apply(
+                    pd.Series, 
+                    index=["R²", "MAE", "RMSE", "Count", "Y_Pred_Mean/Actual_Mean"]
+                )
+                
+                # Ensure that all bins in group_labels are present; fill missing bins
+                grouped_metrics = grouped_metrics.reindex(group_labels)
+                grouped_metrics["Count"] = grouped_metrics["Count"].fillna(0)
+                
+                # Add a column for the dataset name
                 grouped_metrics["Set"] = name
+                
                 grouped_results.append(grouped_metrics)
         
         if grouped_results:
-            df_grouped = pd.concat(grouped_results).reset_index()
-            df_grouped.rename(columns={"Group": "Bin"}, inplace=True)
+            df_grouped = pd.concat(grouped_results).reset_index().rename(columns={"index": "Bin"})
             return df_results, df_grouped
     
     return df_results
 
-
-
-def plot_hist_kde(arr1, arr2, bins=30, labels=("Array 1", "Array 2")):
-    """
-    Plots histogram and KDE overlay for two arrays.
-    """
-    plt.figure(figsize=(10, 6))
-    
-    # Histogram
-    plt.hist(arr1, bins=bins, alpha=0.3, label=f"{labels[0]} Histogram", density=True)
-    plt.hist(arr2, bins=bins, alpha=0.3, label=f"{labels[1]} Histogram", density=True)
-    
-    # KDE
-    sns.kdeplot(arr1, label=f"{labels[0]} KDE", linewidth=2)
-    sns.kdeplot(arr2, label=f"{labels[1]} KDE", linewidth=2)
-    
-    plt.xlabel("Value")
-    plt.ylabel("Density")
-    plt.legend()
-    plt.title("Histogram + KDE Comparison")
-    plt.show()
-
 # Example usage:
-# plot_hist_kde(y_train, y_test)
+# Suppose you have arrays y_train, y_train_pred, etc.
+# df_overall, df_grouped = evaluate_model(y_train, y_train_pred, y_val, y_val_pred, y_test, y_test_pred, group_by=True)
+# print(df_overall)
+# print(df_grouped)
+
 
 
