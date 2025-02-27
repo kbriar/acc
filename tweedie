@@ -1,0 +1,125 @@
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import optuna
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+# Sample dataset: Simulating a Tweedie-distributed target
+np.random.seed(42)
+n_samples = 5000
+X = np.random.rand(n_samples, 10)
+y = np.random.gamma(shape=2, scale=2, size=n_samples)  # Simulated Tweedie-like data
+
+# Splitting the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Define the objective function for Optuna hyperparameter tuning
+def objective(trial):
+    params = {
+        'objective': 'tweedie',  # Tweedie Regression
+        'tweedie_variance_power': trial.suggest_float('tweedie_variance_power', 1.1, 1.9),
+        'metric': 'rmse',
+        'boosting_type': 'gbdt',
+        'learning_rate': trial.suggest_loguniform('learning_rate', 0.005, 0.2),
+        'num_leaves': trial.suggest_int('num_leaves', 20, 300),
+        'max_depth': trial.suggest_int('max_depth', 3, 12),
+        'min_child_samples': trial.suggest_int('min_child_samples', 10, 100),
+        'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+        'reg_alpha': trial.suggest_loguniform('reg_alpha', 1e-5, 10),
+        'reg_lambda': trial.suggest_loguniform('reg_lambda', 1e-5, 10),
+        'n_estimators': trial.suggest_int('n_estimators', 100, 1000)
+    }
+
+    model = lgb.LGBMRegressor(**params)
+    model.fit(X_train, y_train, eval_set=[(X_test, y_test)], eval_metric='rmse', early_stopping_rounds=50, verbose=False)
+    
+    y_pred = model.predict(X_test)
+    return mean_squared_error(y_test, y_pred, squared=False)
+
+# Run Optuna hyperparameter tuning
+study = optuna.create_study(direction='minimize')
+study.optimize(objective, n_trials=50)
+
+# Train the best model
+best_params = study.best_params
+best_model = lgb.LGBMRegressor(**best_params)
+best_model.fit(X_train, y_train)
+
+# Predict and evaluate
+y_pred = best_model.predict(X_test)
+rmse = mean_squared_error(y_test, y_pred, squared=False)
+print(f"Best RMSE: {rmse:.4f}")
+print("Best Hyperparameters:", best_params)
+
+
+
+--------------------------------------------------
+from sklearn.linear_model import TweedieRegressor
+from sklearn.model_selection import GridSearchCV
+
+# Define Tweedie power range for tuning
+param_grid = {'power': [1.1, 1.3, 1.5, 1.7, 1.9], 'alpha': [0.001, 0.01, 0.1, 1, 10]}
+
+# Perform Grid Search with Cross Validation
+tweedie = GridSearchCV(TweedieRegressor(), param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+tweedie.fit(X_train, y_train)
+
+print("Best Tweedie Power:", tweedie.best_params_['power'])
+print("Best Alpha:", tweedie.best_params_['alpha'])
+print("Best RMSE:", np.sqrt(-tweedie.best_score_))
+
+------------------------------------------------------------------
+
+import xgboost as xgb
+
+# Define a custom loss function that handles zero-inflated data
+def tweedie_loss(predt, dtrain):
+    y = dtrain.get_label()
+    loss = ((y - predt) ** 2).mean()  # Approximate loss
+    return 'custom_loss', loss
+
+# Define XGBoost parameters
+xgb_params = {
+    'objective': 'reg:squarederror',
+    'learning_rate': 0.05,
+    'max_depth': 6,
+    'n_estimators': 500,
+    'subsample': 0.7
+}
+
+# Train the model
+xgb_model = xgb.XGBRegressor(**xgb_params)
+xgb_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], eval_metric=tweedie_loss, verbose=False)
+
+# Predict and evaluate
+y_pred = xgb_model.predict(X_test)
+print("XGBoost RMSE:", mean_squared_error(y_test, y_pred, squared=False))
+
+----------------------------------------------------------------------
+
+import statsmodels.api as sm
+from statsmodels.discrete.count_model import ZeroInflatedPoisson
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+
+# Generate synthetic zero-inflated count data
+np.random.seed(42)
+X = np.random.rand(1000, 3)
+zero_mask = np.random.choice([0, 1], size=1000, p=[0.55, 0.45])  # 55% zeros
+y = zero_mask * np.random.poisson(lam=3, size=1000)
+
+# Split dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Fit ZIP Model
+zip_model = ZeroInflatedPoisson(y_train, sm.add_constant(X_train)).fit()
+print(zip_model.summary())
+
+# Predictions
+y_pred = zip_model.predict(sm.add_constant(X_test))
+print("Mean Squared Error:", np.mean((y_test - y_pred) ** 2))
+
+
