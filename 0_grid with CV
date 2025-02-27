@@ -1,0 +1,38 @@
+import numpy as np
+import pandas as pd
+from lightgbm import LGBMRegressor
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.metrics import mean_squared_error
+
+# Assume X and y are your features and target variable for training.
+# For demonstration, let's assume they are already defined:
+# X = df[features]
+# y = df['accident_rate']
+
+# Define a cross-validation strategy.
+kf = KFold(n_splits=5, shuffle=True, random_state=42)
+
+# Set up a LightGBM regressor.
+lgbm = LGBMRegressor(random_state=42)
+
+# Define a parameter grid for tuning.
+param_grid = {
+    'n_estimators': [100, 200],
+    'learning_rate': [0.1, 0.01],
+    'num_leaves': [31, 50]
+}
+
+# Initialize GridSearchCV with negative mean squared error as the scoring metric.
+grid_search = GridSearchCV(lgbm, param_grid, scoring='neg_mean_squared_error', cv=kf, n_jobs=-1)
+grid_search.fit(X, y)
+
+# The best model based on cross-validation.
+final_model = grid_search.best_estimator_
+print("Best hyperparameters:", grid_search.best_params_)
+
+# Optionally, retrain final_model on the entire training dataset.
+final_model.fit(X, y)
+
+# Now, final_model is ready to predict on unseen data.
+# For example, assuming X_new is your new, unseen data:
+# predictions = final_model.predict(X_new)
