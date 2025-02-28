@@ -1,0 +1,151 @@
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.model_selection import TimeSeriesSplit, GridSearchCV, StratifiedKFold
+from sklearn.metrics import (confusion_matrix, accuracy_score, precision_score,
+                             recall_score, roc_auc_score, r2_score, mean_absolute_error,
+                             mean_squared_error)
+
+# -------------------------
+# 1. Data Preparation
+# -------------------------
+# Assume your DataFrame 'df' has the following columns:
+#   - 'date' (dates as string or datetime)
+#   - 'accident_rate' (numerical target)
+#   - 'region' (categorical region info)
+#   - plus feature columns (e.g., 'feature1', 'feature2', ...)
+
+# Convert date column to datetime
+df['date'] = pd.to_datetime(df['date'])
+
+# Define training and test time windows
+train_df = df[(df['date'] >= '2023-03-01') & (df['date'] <= '2024-09-30')].copy()
+test_df = df[(df['date'] >= '2024-10-01') & (df['date'] <= '2024-11-30')].copy()
+
+# Identify feature columns (exclude date, accident_rate, and region)
+feature_cols = [col for col in df.columns if col not in ['date', 'accident_rate', 'region']]
+
+# -------------------------
+# 2. Classification Task: Predicting Zeros vs. Nonzeros
+# -------------------------
+# Binary target: 1 if accident_rate > 0, else 0
+X_train = train_df[feature_cols]
+X_test = test_df[feature_cols]
+
+y_train_class = (train_df['accident_rate'] > 0).astype(int)
+y_test_class = (test_df['accident_rate'] > 0).astype(int)
+
+# Use Logistic Regression with L2 regularization and StratifiedKFold CV for robustness
+clf = LogisticRegression(penalty='l2', solver='liblinear', random_state=42)
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+# (Optional: tune hyperparameters with cross-validation here)
+clf.fit(X_train, y_train_class)
+
+# Predictions & probabilities
+train_pred_class = clf.predict(X_train)
+train_prob_class = clf.predict_proba(X_train)[:, 1]
+
+test_pred_class = clf.predict(X_test)
+test_prob_class = clf.predict_proba(X_test)[:, 1]
+
+# Function to compute classification metrics
+def classification_metrics(y_true, y_pred, y_prob):
+    metrics = {
+        'Confusion Matrix': confusion_matrix(y_true, y_pred),
+        'Accuracy': accuracy_score(y_true, y_pred),
+        'Precision': precision_score(y_true, y_pred),
+        'Recall': recall_score(y_true, y_pred),
+        'ROC AUC': roc_auc_score(y_true, y_prob)
+    }
+    return metrics
+
+train_class_metrics = classification_metrics(y_train_class, train_pred_class, train_prob_class)
+test_class_metrics = classification_metrics(y_test_class, test_pred_class, test_prob_class)
+
+print("Classification Metrics - Train:")
+print(train_class_metrics)
+print("\nClassification Metrics - Test:")
+print(test_class_metrics)
+
+# -------------------------
+# 3. Regression Task: Predicting Accident Rate (for Nonzero Cases)
+# -------------------------
+# For regression we consider only cases where accident_rate > 0.
+train_reg = train_df[train_df['accident_rate'] > 0].copy()
+test_reg = test_df[test_df['accident_rate'] > 0].copy()
+
+X_train_reg = train_reg[feature_cols]
+y_train_reg = train_reg['accident_rate']
+
+X_test_reg = test_reg[feature_cols]
+y_test_reg = test_reg['accident_rate']
+
+# Use Ridge Regression with a TimeSeriesSplit for CV to preserve temporal order.
+ridge = Ridge(random_state=42)
+tscv = TimeSeriesSplit(n_splits=5)
+param_grid = {'alpha': [0.1, 1.0, 10.0]}
+
+grid_search = GridSearchCV(ridge, param_grid, cv=tscv, scoring='r2')
+grid_search.fit(X_train_reg, y_train_reg)
+best_ridge = grid_search.best_estimator_
+
+print("\nBest Ridge Parameters:", grid_search.best_params_)
+
+# Fit the best model on all training regression data
+best_ridge.fit(X_train_reg, y_train_reg)
+test_pred_reg = best_ridge.predict(X_test_reg)
+
+# Function to compute regression metrics
+def regression_metrics(y_true, y_pred):
+    metrics = {
+        'R2': r2_score(y_true, y_pred),
+        'MAE': mean_absolute_error(y_true, y_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
+        'Mean': np.mean(y_pred),
+        'Count': len(y_pred)
+    }
+    return metrics
+
+reg_metrics_overall = regression_metrics(y_test_reg, test_pred_reg)
+print("\nRegression Metrics (Nonzero Cases) - Overall on Test Subset:")
+print(reg_metrics_overall)
+
+# -------------------------
+# 4. Final Hurdle Model: Combine Classification & Regression
+# -------------------------
+# For the full test set, if the classifier predicts 0 then set accident_rate = 0;
+# if classifier predicts 1 then use the regression model's prediction.
+final_predictions = []
+for idx in range(len(X_test)):
+    if test_pred_class[idx] == 0:
+        final_predictions.append(0)
+    else:
+        # Use regression model for nonzero predictions
+        reg_pred = best_ridge.predict(X_test.iloc[[idx]])[0]
+        final_predictions.append(reg_pred)
+
+test_df['final_pred'] = final_predictions
+
+# Compute final regression metrics on full test set
+overall_reg_metrics = regression_metrics(test_df['accident_rate'], test_df['final_pred'])
+print("\nFinal Hurdle Model Regression Metrics (Overall Test):")
+print(overall_reg_metrics)
+
+# -------------------------
+# 5. Detailed Metrics: Region & Group Level
+# -------------------------
+# Region-level metrics (group by 'region')
+region_metrics = test_df.groupby('region').apply(lambda grp: regression_metrics(grp['accident_rate'], grp['final_pred']))
+print("\nRegion-level Regression Metrics:")
+print(region_metrics)
+
+# Group-level metrics based on accident_rate bins.
+# Define bins: note that '0' is a separate bin.
+bins = [-np.inf, 0, 3, 7, 15, np.inf]
+labels = ['0', '1-3', '3-7', '7-15', '15+']
+test_df['accident_group'] = pd.cut(test_df['accident_rate'], bins=bins, labels=labels)
+
+group_metrics = test_df.groupby('accident_group').apply(lambda grp: regression_metrics(grp['accident_rate'], grp['final_pred']))
+print("\nGroup-level Regression Metrics:")
+print(group_metrics)
