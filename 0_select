@@ -1,0 +1,49 @@
+import pandas as pd
+
+# Assume 'df' is your DataFrame containing all your variables,
+# including the target variable 'accident_rate'.
+
+# Define the transformation suffixes
+suffixes = ['_sqrt', '_log', '_square', '_std']
+
+def get_base_variable(col):
+    """
+    Removes known transformation suffixes to extract the base variable name.
+    If no known suffix is present, returns the column name as is.
+    """
+    for s in suffixes:
+        if col.endswith(s):
+            return col[:-len(s)]
+    return col
+
+# Compute the correlation of each variable with accident_rate.
+# Drop accident_rate from the list of features.
+corr_series = df.corr()['accident_rate'].drop('accident_rate')
+
+# We assume that "highly correlated" is based on the absolute correlation value.
+# Build dictionaries to store the best (i.e. highest absolute correlation) variable per base group.
+best_corr = {}      # key: base variable, value: absolute correlation value
+best_variable = {}  # key: base variable, value: feature name with the highest correlation
+
+for col, corr_val in corr_series.items():
+    base_var = get_base_variable(col)
+    if base_var not in best_corr or abs(corr_val) > best_corr[base_var]:
+        best_corr[base_var] = abs(corr_val)
+        best_variable[base_var] = col
+
+# Convert the result to a DataFrame for easier sorting and selection.
+best_df = pd.DataFrame({
+    'base_variable': list(best_variable.keys()),
+    'selected_feature': list(best_variable.values()),
+    'abs_correlation': list(best_corr.values())
+})
+
+# Sort the DataFrame by absolute correlation in descending order.
+best_df = best_df.sort_values(by='abs_correlation', ascending=False)
+
+# Choose the top n features. For example, n = 10.
+n = 10
+top_n_features = best_df.head(n)
+
+print("Top n features based on highest correlation within groups:")
+print(top_n_features)
