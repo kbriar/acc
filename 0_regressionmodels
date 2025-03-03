@@ -1,0 +1,78 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.linear_model import TweedieRegressor
+import xgboost as xgb
+
+# ---------------------------------------
+# 1. Prepare Data for Regression
+# ---------------------------------------
+# Assume train_df and test_df are your original training and test DataFrames
+# (already split by time, etc.) and include columns 'accident_rate', 'date', 'region', and other features.
+#
+# For the regression step, we only use the nonzero accident_rate cases.
+
+train_reg = train_df[train_df['accident_rate'] > 0].copy()
+test_reg  = test_df[test_df['accident_rate'] > 0].copy()
+
+# Define feature columns (adjust as needed)
+feature_cols = [col for col in train_df.columns if col not in ['date', 'accident_rate', 'region']]
+
+X_train_reg = train_reg[feature_cols]
+y_train_reg = train_reg['accident_rate']
+
+X_test_reg = test_reg[feature_cols]
+y_test_reg = test_reg['accident_rate']
+
+# Function to compute regression metrics
+def regression_metrics(y_true, y_pred):
+    return {
+        'R2': r2_score(y_true, y_pred),
+        'MAE': mean_absolute_error(y_true, y_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_true, y_pred))
+    }
+
+# ---------------------------------------
+# 2. Build and Evaluate Regression Models
+# ---------------------------------------
+
+# 2.1 Gamma Regression using TweedieRegressor
+# For Gamma regression, set power=2 and an appropriate link function (default 'auto' often works well)
+gamma_model = TweedieRegressor(power=2, alpha=0.0, link='log')
+gamma_model.fit(X_train_reg, y_train_reg)
+y_pred_gamma = gamma_model.predict(X_test_reg)
+metrics_gamma = regression_metrics(y_test_reg, y_pred_gamma)
+print("Gamma Regression Metrics:", metrics_gamma)
+
+# 2.2 Huber Regressor
+# HuberRegressor is robust to outliers. Hyperparameters like epsilon and alpha can be tuned.
+huber_model = HuberRegressor(epsilon=1.35, alpha=0.0001)
+huber_model.fit(X_train_reg, y_train_reg)
+y_pred_huber = huber_model.predict(X_test_reg)
+metrics_huber = regression_metrics(y_test_reg, y_pred_huber)
+print("Huber Regressor Metrics:", metrics_huber)
+
+# 2.3 RANSAC Regressor
+# Using a LinearRegression as the base estimator, RANSAC can handle outliers effectively.
+base_estimator = LinearRegression()
+ransac_model = RANSACRegressor(base_estimator=base_estimator, 
+                               min_samples=0.5, 
+                               residual_threshold=5.0,  # adjust threshold as needed
+                               random_state=42)
+ransac_model.fit(X_train_reg, y_train_reg)
+y_pred_ransac = ransac_model.predict(X_test_reg)
+metrics_ransac = regression_metrics(y_test_reg, y_pred_ransac)
+print("RANSAC Regressor Metrics:", metrics_ransac)
+
+# 2.4 XGBoost Regressor
+# XGBoost can capture non-linear interactions. Here we use a basic parameter setting.
+xgb_model = xgb.XGBRegressor(objective='reg:squarederror',
+                             n_estimators=100,
+                             learning_rate=0.1,
+                             random_state=42)
+xgb_model.fit(X_train_reg, y_train_reg)
+y_pred_xgb = xgb_model.predict(X_test_reg)
+metrics_xgb = regression_metrics(y_test_reg, y_pred_xgb)
+print("XGBoost Regressor Metrics:", metrics_xgb)
