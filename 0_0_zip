@@ -1,0 +1,111 @@
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.base.model import GenericLikelihoodModel
+from scipy.special import gammaln, expit
+from sklearn.metrics import mean_squared_error
+
+class ZeroInflatedGamma(GenericLikelihoodModel):
+    """
+    Zero-Inflated Gamma model using a logistic sub-model for zero inflation
+    and a Gamma sub-model for positive outcomes.
+    
+    The parameters are:
+    - beta (for Gamma mean)        --> size = number of predictors
+    - delta (for zero-inflation)   --> size = number of predictors
+    - log_alpha (shape parameter)  --> scalar
+    """
+    def loglike(self, params):
+        # Number of predictors (including intercept)
+        k = self.exog.shape[1]
+        
+        # 1) Gamma regression coefficients (beta)
+        beta = params[:k]
+        # 2) Logistic (zero-inflation) coefficients (delta)
+        delta = params[k:2*k]
+        # 3) log_alpha --> shape parameter for Gamma
+        log_alpha = params[-1]
+        alpha = np.exp(log_alpha)
+        
+        # Mean of Gamma: mu = exp(X * beta)
+        mu = np.exp(self.exog @ beta)
+        # Probability of structural zero: pi = expit(X * delta)
+        pi = expit(self.exog @ delta)
+        
+        y = self.endog
+        ll = np.zeros_like(y, dtype=float)
+        
+        # For y == 0: log-likelihood is log(pi)
+        idx_zero = (y == 0)
+        ll[idx_zero] = np.log(pi[idx_zero] + 1e-12)
+        
+        # For y > 0: log-likelihood is log(1 - pi) + Gamma log-density
+        idx_pos = (y > 0)
+        ll[idx_pos] = (
+            np.log(1 - pi[idx_pos] + 1e-12) +
+            alpha * np.log(alpha) -
+            gammaln(alpha) -
+            alpha * np.log(mu[idx_pos]) +
+            (alpha - 1) * np.log(y[idx_pos]) -
+            alpha * y[idx_pos] / mu[idx_pos]
+        )
+        
+        return ll.sum()
+    
+    def predict(self, exog=None, params=None):
+        """
+        Predict the expected value: E[y] = (1 - pi) * mu
+         - mu = exp(X * beta)
+         - pi = expit(X * delta)
+        """
+        if params is None:
+            params = self.params  # use fitted params if not provided
+        if exog is None:
+            exog = self.exog      # default to training design matrix
+        
+        k = exog.shape[1]
+        beta = params[:k]
+        delta = params[k:2*k]
+        # log_alpha = params[-1]  # not needed to compute E[y]
+        
+        mu = np.exp(exog @ beta)
+        pi = expit(exog @ delta)
+        return (1 - pi) * mu
+
+# ------------------------------------------------------------------------
+# 1. Prepare Your Data
+# ------------------------------------------------------------------------
+# Assume you have:
+#   train_df, test_df: Pandas DataFrames
+#   'accident_rate'   : target column
+#   select_top_n_vars_lgb_1 : list of predictor variable names
+
+# Add an intercept to your design matrices
+X_train = sm.add_constant(train_df[select_top_n_vars_lgb_1])
+y_train = train_df['accident_rate']
+
+X_test = sm.add_constant(test_df[select_top_n_vars_lgb_1])
+y_test = test_df['accident_rate']
+
+# ------------------------------------------------------------------------
+# 2. Fit the Zero-Inflated Gamma Model
+# ------------------------------------------------------------------------
+# The parameter vector includes:
+#   - beta (k elements)
+#   - delta (k elements)
+#   - log_alpha (1 element)
+# => total = 2*k + 1
+
+initial_params = np.zeros(2 * X_train.shape[1] + 1)  # start all at 0
+zig_model = ZeroInflatedGamma(endog=y_train, exog=X_train)
+
+# Increase maxiter if needed. You can also try method='lbfgs' or others.
+zig_result = zig_model.fit(start_params=initial_params, maxiter=100, disp=False)
+print(zig_result.summary())
+
+# ------------------------------------------------------------------------
+# 3. Make Predictions & Evaluate
+# ------------------------------------------------------------------------
+y_pred = zig_result.predict(X_test)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+print("Test RMSE:", rmse)
