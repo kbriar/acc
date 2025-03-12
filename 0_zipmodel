@@ -1,0 +1,80 @@
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.base.model import GenericLikelihoodModel
+from scipy.special import gammaln, expit
+from sklearn.metrics import mean_squared_error
+
+# Define the custom Zero-Inflated Gamma Model
+class ZeroInflatedGamma(GenericLikelihoodModel):
+    def loglike(self, params):
+        # Number of predictors (including intercept)
+        k = self.exog.shape[1]
+        # First k parameters for Gamma regression (beta)
+        beta = params[:k]
+        # Next k parameters for zero-inflation logistic part (delta)
+        delta = params[k:2*k]
+        # Last parameter: log(alpha) to ensure alpha > 0
+        log_alpha = params[-1]
+        alpha = np.exp(log_alpha)
+        
+        # Compute mu and pi
+        mu = np.exp(np.dot(self.exog, beta))
+        pi = expit(np.dot(self.exog, delta))
+        
+        y = self.endog
+        ll = np.zeros(len(y))
+        
+        # For observations with accident_rate == 0
+        ll[y == 0] = np.log(pi[y == 0] + 1e-10)
+        
+        # For accident_rate > 0, use Gamma density (weighted by 1 - pi)
+        mask = y > 0
+        ll[mask] = (np.log(1 - pi[mask] + 1e-10) +
+                    alpha * np.log(alpha) - gammaln(alpha) -
+                    alpha * np.log(mu[mask]) +
+                    (alpha - 1) * np.log(y[mask]) -
+                    alpha * y[mask] / mu[mask])
+        return np.sum(ll)
+    
+    def predict(self, exog):
+        # For a new observation, the expected accident_rate = (1 - pi) * mu
+        k = self.exog.shape[1]
+        beta = self.params[:k]
+        delta = self.params[k:2*k]
+        mu = np.exp(np.dot(exog, beta))
+        pi = expit(np.dot(exog, delta))
+        return (1 - pi) * mu
+
+# -------------------------------
+# Prepare Data using your variables
+# -------------------------------
+
+# Assume train_df and test_df are your training and test DataFrames.
+# The dependent variable is 'accident_rate'
+# The predictors are listed in select_top_n_vars_lgb_1
+
+# Create design matrices with an intercept term
+X_train = sm.add_constant(train_df[select_top_n_vars_lgb_1])
+y_train = train_df['accident_rate']
+
+X_test = sm.add_constant(test_df[select_top_n_vars_lgb_1])
+y_test = test_df['accident_rate']
+
+# -------------------------------
+# Fit the Zero-Inflated Gamma Model
+# -------------------------------
+# Initial parameters: zeros for beta and delta, and 0 for log(alpha) (implying alpha=1)
+initial_params = np.zeros(2 * X_train.shape[1] + 1)
+model = ZeroInflatedGamma(y_train, X_train)
+result = model.fit(initial_params=initial_params, maxiter=100, disp=False)
+print(result.summary())
+
+# -------------------------------
+# Make Predictions on Test Data
+# -------------------------------
+y_pred = result.predict(X_test)
+
+# Evaluate performance using RMSE
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+print("Test RMSE:", rmse)
