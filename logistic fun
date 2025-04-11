@@ -1,0 +1,126 @@
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_curve, auc, precision_recall_fscore_support
+
+# You should have a defined function "classification_metrics" which takes
+# (true labels, predicted class labels, predicted probabilities) and returns performance metrics.
+# def classification_metrics(y_true, y_pred, y_prob):
+#     # ... your implementation here ...
+#     return metrics
+
+def run_logistic_for_accident(accident_value, df, top_vars):
+    """
+    Runs logistic regression for a specific accident type value.
+    
+    Parameters:
+        accident_value: value of the accident type to filter the data on.
+        df: the main data frame that contains the accident records.
+        top_vars: list of feature column names to be used for the logistic regression model.
+
+    Returns:
+        A dictionary containing the fitted logistic regression model, the calculated metrics,
+        the best threshold based on ROC (Youden's J statistic), and precision, recall, f1 scores
+        for both training and test sets.
+    """
+    
+    # Filter the main data frame to only include records for the specified accident type
+    df_filtered = df[df['accident_type'] == accident_value].copy()
+    
+    # Ensure that the 'date' column is of datetime type.
+    df_filtered['date'] = pd.to_datetime(df_filtered['date'])
+    
+    # Split the dataset into training and test subsets based on date ranges
+    train_df = df_filtered[(df_filtered['date'] >= '2023-03-01') & (df_filtered['date'] <= '2025-01-01')].copy()
+    test_df = df_filtered[(df_filtered['date'] >= '2025-02-01') & (df_filtered['date'] <= '2025-04-01')].copy()
+    
+    # Optionally, create copies for X_train and X_test if you need separate data frames.
+    X_train = train_df.copy()
+    X_test = test_df.copy()
+    y_train = train_df['accident_happen'].copy()
+    y_test = test_df['accident_happen'].copy()
+    
+    # Create the logistic regression classifier.
+    # Note: Here penalty is set to 'l2'. If you intend to use l1 regularization, change to penalty='l1'.
+    clf = LogisticRegression(max_iter=1000, class_weight={0: 1, 1: 10}, penalty='l2', solver='liblinear')
+    clf.fit(X_train[top_vars], y_train)
+    
+    # Predict classes and probabilities on training set
+    train_df['logistic_class_train'] = clf.predict(X_train[top_vars])
+    train_df['logistic_prob_train'] = clf.predict_proba(X_train[top_vars])[:, 1]
+    
+    # Predict classes and probabilities on test set
+    test_df['logistic_class_test'] = clf.predict(X_test[top_vars])
+    test_df['logistic_prob_test'] = clf.predict_proba(X_test[top_vars])[:, 1]
+    
+    # Calculate classification metrics using the assumed helper function
+    train_metrics = classification_metrics(y_train, train_df['logistic_class_train'], train_df['logistic_prob_train'])
+    test_metrics = classification_metrics(y_test, test_df['logistic_class_test'], test_df['logistic_prob_test'])
+    
+    # Compute ROC curve on the test data and calculate AUC
+    fpr_test, tpr_test, thresholds_test = roc_curve(y_test, test_df['logistic_prob_test'])
+    roc_auc_test = auc(fpr_test, tpr_test)
+    
+    # Calculate Youden's J statistic (tpr - fpr) to determine the best threshold
+    j_scores = tpr_test - fpr_test
+    best_index = np.argmax(j_scores)
+    best_threshold = thresholds_test[best_index]
+    
+    print("Best Threshold:", best_threshold)
+    
+    # Adjust predictions based on the best threshold for both training and test data
+    train_df['logistic_class_train_adjusted'] = (train_df['logistic_prob_train'] >= best_threshold).astype(int)
+    test_df['logistic_class_test_adjusted'] = (test_df['logistic_prob_test'] >= best_threshold).astype(int)
+    
+    # Recalculate classification metrics after threshold adjustment
+    train_adjusted_metrics = classification_metrics(y_train, train_df['logistic_class_train_adjusted'], train_df['logistic_prob_train'])
+    test_adjusted_metrics = classification_metrics(y_test, test_df['logistic_class_test_adjusted'], test_df['logistic_prob_test'])
+    
+    print("Train Adjusted Metrics:")
+    print(train_adjusted_metrics)
+    
+    print("Test Adjusted Metrics:")
+    print(test_adjusted_metrics)
+    
+    # Calculate additional metrics (precision, recall, f1 scores) using sklearn's support function.
+    # Here, average='binary' is used because we assume a binary classification problem.
+    precision_train, recall_train, f1_train, _ = precision_recall_fscore_support(
+        y_train, train_df['logistic_class_train_adjusted'], average='binary'
+    )
+    precision_test, recall_test, f1_test, _ = precision_recall_fscore_support(
+        y_test, test_df['logistic_class_test_adjusted'], average='binary'
+    )
+    
+    print("Train Precision, Recall, F1:", precision_train, recall_train, f1_train)
+    print("Test Precision, Recall, F1:", precision_test, recall_test, f1_test)
+    
+    # Return all relevant outputs as a dictionary
+    results = {
+        'model': clf,
+        'train_metrics': train_metrics,
+        'test_metrics': test_metrics,
+        'train_adjusted_metrics': train_adjusted_metrics,
+        'test_adjusted_metrics': test_adjusted_metrics,
+        'best_threshold': best_threshold,
+        'precision_train': precision_train,
+        'recall_train': recall_train,
+        'f1_train': f1_train,
+        'precision_test': precision_test,
+        'recall_test': recall_test,
+        'f1_test': f1_test,
+        'train_df': train_df,  # returned in case you want to inspect predictions
+        'test_df': test_df     # returned in case you want to inspect predictions
+    }
+    
+    return results
+
+# Example usage:
+# Assuming that two_df is your main data frame, and it contains a column 'accident_type' to filter on,
+# and that top_vars is a list of column names you wish to use as features, you might run:
+#
+# top_vars = ['feature1', 'feature2', 'feature3']  # replace with your actual features
+#
+# for accident in two_df['accident_type'].unique():
+#     print("Running analysis for accident type:", accident)
+#     results = run_logistic_for_accident(accident, two_df, top_vars)
+#     # You can now inspect the returned results dictionary for each accident type.
