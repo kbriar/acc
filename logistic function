@@ -1,0 +1,204 @@
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_curve, auc, precision_recall_fscore_support
+
+# =============================================================================
+# Assumed helper function: classification_metrics
+# Replace or expand this with your own implementation as needed.
+def classification_metrics(y_true, y_pred, y_prob):
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    roc_auc = auc(fpr, tpr)
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary')
+    metrics = {
+        'roc_auc': roc_auc,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1
+    }
+    return metrics
+
+# =============================================================================
+# Function to run logistic regression on one accident type
+def run_logistic_for_accident(accident_value, df, top_vars):
+    """
+    Runs logistic regression for a specific accident type value.
+    
+    Parameters:
+        accident_value: value of the accident type to filter the data on.
+        df: the main data frame that contains the accident records.
+        top_vars: list of feature column names to be used for the logistic regression model.
+
+    Returns:
+        A dictionary containing the fitted model, performance metrics,
+        best threshold, and prediction data frames.
+    """
+    
+    # Filter the data for the specific accident type
+    df_filtered = df[df['accident_type'] == accident_value].copy()
+    
+    # Convert 'date' to datetime to ensure proper filtering
+    df_filtered['date'] = pd.to_datetime(df_filtered['date'])
+    
+    # Define training and test windows by date
+    train_df = df_filtered[(df_filtered['date'] >= '2023-03-01') & (df_filtered['date'] <= '2025-01-01')].copy()
+    test_df = df_filtered[(df_filtered['date'] >= '2025-02-01') & (df_filtered['date'] <= '2025-04-01')].copy()
+    
+    # Prepare features and targets
+    X_train = train_df.copy()
+    X_test = test_df.copy()
+    y_train = train_df['accident_happen'].copy()
+    y_test = test_df['accident_happen'].copy()
+    
+    # Create and train the logistic regression model.
+    clf = LogisticRegression(max_iter=1000, class_weight={0: 1, 1: 10}, penalty='l2', solver='liblinear')
+    clf.fit(X_train[top_vars], y_train)
+    
+    # Predictions on train and test sets
+    train_df['logistic_class_train'] = clf.predict(X_train[top_vars])
+    train_df['logistic_prob_train'] = clf.predict_proba(X_train[top_vars])[:, 1]
+    
+    test_df['logistic_class_test'] = clf.predict(X_test[top_vars])
+    test_df['logistic_prob_test'] = clf.predict_proba(X_test[top_vars])[:, 1]
+    
+    # Calculate initial classification metrics
+    train_metrics = classification_metrics(y_train, train_df['logistic_class_train'], train_df['logistic_prob_train'])
+    test_metrics = classification_metrics(y_test, test_df['logistic_class_test'], test_df['logistic_prob_test'])
+    
+    # Determine the best threshold on the test data using Youden's J statistic (tpr - fpr)
+    fpr_test, tpr_test, thresholds_test = roc_curve(y_test, test_df['logistic_prob_test'])
+    j_scores = tpr_test - fpr_test
+    best_index = np.argmax(j_scores)
+    best_threshold = thresholds_test[best_index]
+    print(f"Accident Type: {accident_value} - Best Threshold: {best_threshold}")
+    
+    # Adjust predictions using the best threshold
+    train_df['logistic_class_train_adjusted'] = (train_df['logistic_prob_train'] >= best_threshold).astype(int)
+    test_df['logistic_class_test_adjusted'] = (test_df['logistic_prob_test'] >= best_threshold).astype(int)
+    
+    # Recalculate metrics after threshold adjustment
+    train_adjusted_metrics = classification_metrics(y_train, train_df['logistic_class_train_adjusted'], train_df['logistic_prob_train'])
+    test_adjusted_metrics = classification_metrics(y_test, test_df['logistic_class_test_adjusted'], test_df['logistic_prob_test'])
+    
+    # Additional metrics using precision, recall, and F1-score from sklearn metrics
+    precision_train, recall_train, f1_train, _ = precision_recall_fscore_support(
+        y_train, train_df['logistic_class_train_adjusted'], average='binary'
+    )
+    precision_test, recall_test, f1_test, _ = precision_recall_fscore_support(
+        y_test, test_df['logistic_class_test_adjusted'], average='binary'
+    )
+    
+    print("Train Adjusted Metrics:", train_adjusted_metrics)
+    print("Test Adjusted Metrics:", test_adjusted_metrics)
+    print("Train Precision, Recall, F1:", precision_train, recall_train, f1_train)
+    print("Test Precision, Recall, F1:", precision_test, recall_test, f1_test)
+    
+    # Return all the outputs as a dictionary
+    results = {
+        'accident_type': accident_value,
+        'model': clf,
+        'train_metrics': train_metrics,
+        'test_metrics': test_metrics,
+        'train_adjusted_metrics': train_adjusted_metrics,
+        'test_adjusted_metrics': test_adjusted_metrics,
+        'best_threshold': best_threshold,
+        'precision_train': precision_train,
+        'recall_train': recall_train,
+        'f1_train': f1_train,
+        'precision_test': precision_test,
+        'recall_test': recall_test,
+        'f1_test': f1_test,
+        'train_df': train_df,  # prediction outputs for training data
+        'test_df': test_df     # prediction outputs for test data
+    }
+    
+    return results
+
+# =============================================================================
+# Example of calling the function separately for each accident type
+
+# Replace these accident type values with the actual values in your data
+accident_type1 = 'Type1'
+accident_type2 = 'Type2'
+accident_type3 = 'Type3'
+accident_type4 = 'Type4'
+
+# Define your feature column names (update as necessary)
+top_vars = ['feature1', 'feature2', 'feature3']
+
+# Assuming two_df is your main DataFrame that contains the required columns.
+results1 = run_logistic_for_accident(accident_type1, two_df, top_vars)
+results2 = run_logistic_for_accident(accident_type2, two_df, top_vars)
+results3 = run_logistic_for_accident(accident_type3, two_df, top_vars)
+results4 = run_logistic_for_accident(accident_type4, two_df, top_vars)
+
+# =============================================================================
+# Combine summary metrics manually
+
+metrics_summary = pd.DataFrame([
+    {
+        'accident_type': accident_type1,
+        'train_roc_auc': results1['train_metrics']['roc_auc'],
+        'test_roc_auc': results1['test_metrics']['roc_auc'],
+        'train_precision': results1['precision_train'],
+        'test_precision': results1['precision_test'],
+        'train_recall': results1['recall_train'],
+        'test_recall': results1['recall_test'],
+        'train_f1': results1['f1_train'],
+        'test_f1': results1['f1_test'],
+        'best_threshold': results1['best_threshold']
+    },
+    {
+        'accident_type': accident_type2,
+        'train_roc_auc': results2['train_metrics']['roc_auc'],
+        'test_roc_auc': results2['test_metrics']['roc_auc'],
+        'train_precision': results2['precision_train'],
+        'test_precision': results2['precision_test'],
+        'train_recall': results2['recall_train'],
+        'test_recall': results2['recall_test'],
+        'train_f1': results2['f1_train'],
+        'test_f1': results2['f1_test'],
+        'best_threshold': results2['best_threshold']
+    },
+    {
+        'accident_type': accident_type3,
+        'train_roc_auc': results3['train_metrics']['roc_auc'],
+        'test_roc_auc': results3['test_metrics']['roc_auc'],
+        'train_precision': results3['precision_train'],
+        'test_precision': results3['precision_test'],
+        'train_recall': results3['recall_train'],
+        'test_recall': results3['recall_test'],
+        'train_f1': results3['f1_train'],
+        'test_f1': results3['f1_test'],
+        'best_threshold': results3['best_threshold']
+    },
+    {
+        'accident_type': accident_type4,
+        'train_roc_auc': results4['train_metrics']['roc_auc'],
+        'test_roc_auc': results4['test_metrics']['roc_auc'],
+        'train_precision': results4['precision_train'],
+        'test_precision': results4['precision_test'],
+        'train_recall': results4['recall_train'],
+        'test_recall': results4['recall_test'],
+        'train_f1': results4['f1_train'],
+        'test_f1': results4['f1_test'],
+        'best_threshold': results4['best_threshold']
+    }
+])
+
+print("\nSummary Metrics Across Accident Types:")
+print(metrics_summary)
+
+# =============================================================================
+# Combine prediction outputs (if needed)
+# For example, to combine the training predictions:
+train_combined_df = pd.concat([results1['train_df'], results2['train_df'],
+                               results3['train_df'], results4['train_df']], 
+                              axis=0, ignore_index=True)
+
+test_combined_df = pd.concat([results1['test_df'], results2['test_df'],
+                              results3['test_df'], results4['test_df']], 
+                             axis=0, ignore_index=True)
+
+print("\nCombined Train Predictions Shape:", train_combined_df.shape)
+print("Combined Test Predictions Shape:", test_combined_df.shape)
