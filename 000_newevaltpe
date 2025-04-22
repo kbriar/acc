@@ -1,0 +1,66 @@
+import numpy as np
+import pandas as pd
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+def evaluate_regression_metrics(
+    y_train=None, y_pred_train=None, accident_type_train=None,
+    y_val=None, y_pred_val=None, accident_type_val=None,
+    y_test=None, y_pred_test=None, accident_type_test=None
+):
+    results = []  # list of dicts to convert to DataFrame later
+
+    def get_metrics(y_true, y_pred, label, group='Overall'):
+        return {
+            'Split': label,
+            'Accident_Type': group,
+            'R2': r2_score(y_true, y_pred),
+            'MAE': mean_absolute_error(y_true, y_pred),
+            'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
+            'Count': len(y_true)
+        }
+
+    def get_grouped_metrics(y_true, y_pred, group_col, label):
+        df = pd.DataFrame({
+            'y_true': y_true,
+            'y_pred': y_pred,
+            'group': group_col
+        })
+        grouped = df.groupby('group')
+        metrics_list = []
+        for group_name, group_data in grouped:
+            y_true_group = group_data['y_true']
+            y_pred_group = group_data['y_pred']
+            try:
+                metrics_list.append(get_metrics(y_true_group, y_pred_group, label, group=group_name))
+            except ValueError:
+                # If metrics can't be calculated (e.g., all values constant), fallback to NaNs
+                metrics_list.append({
+                    'Split': label,
+                    'Accident_Type': group_name,
+                    'R2': np.nan,
+                    'MAE': np.nan,
+                    'RMSE': np.nan,
+                    'Count': len(group_data)
+                })
+        return metrics_list
+
+    # TRAIN
+    if y_train is not None and y_pred_train is not None:
+        results.append(get_metrics(y_train, y_pred_train, label='train'))
+        if accident_type_train is not None:
+            results.extend(get_grouped_metrics(y_train, y_pred_train, accident_type_train, 'train'))
+
+    # VALIDATION
+    if y_val is not None and y_pred_val is not None:
+        results.append(get_metrics(y_val, y_pred_val, label='val'))
+        if accident_type_val is not None:
+            results.extend(get_grouped_metrics(y_val, y_pred_val, accident_type_val, 'val'))
+
+    # TEST
+    if y_test is not None and y_pred_test is not None:
+        results.append(get_metrics(y_test, y_pred_test, label='test'))
+        if accident_type_test is not None:
+            results.extend(get_grouped_metrics(y_test, y_pred_test, accident_type_test, 'test'))
+
+    # Convert to DataFrame
+    return pd.DataFrame(results)
